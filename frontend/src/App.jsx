@@ -1,7 +1,11 @@
+import AIChatbox from "./components/AIChatbox";
 import Equipment from './pages/Equipment.jsx'
 import DigitalTwin from './pages/DigitalTwin.jsx'
 import AIInsights from "./pages/AIInsights";
 import ActionPassports from "./pages/ActionPassports";
+import LandingPage from "./pages/LandingPage";
+import { motion, useMotionValue, useTransform, animate } from "motion/react";
+import { Home } from "lucide-react";
 import {
   SUMMARY_METRICS,
   DAILY_ENERGY_READINGS,
@@ -9,7 +13,7 @@ import {
   ENERGY_ASSUMPTIONS,
   calculateEnergyKWh,
 } from "./data/mockData";
-import { useState } from 'react'
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Boxes,
@@ -29,6 +33,7 @@ import {
 } from 'lucide-react'
 
 const navigation = [
+  { name: "Home", icon: Home },
   { name: 'Overview', icon: LayoutDashboard },
   { name: 'Equipment', icon: Boxes },
   { name: 'Digital Twin', icon: SlidersHorizontal },
@@ -39,7 +44,7 @@ const navigation = [
 const metrics = [
   {
     title: 'Energy Used',
-    value: SUMMARY_METRICS.energyUsedKWh.toLocaleString('en-IN'),
+    value: SUMMARY_METRICS.energyUsedKWh,
     unit: 'kWh',
     note: 'Across the illustrative week',
     icon: Zap,
@@ -47,7 +52,7 @@ const metrics = [
   },
   {
     title: 'Estimated Cost',
-    value: `₹${SUMMARY_METRICS.estimatedCostINR.toLocaleString('en-IN')}`,
+    value: SUMMARY_METRICS.estimatedCostINR,
     unit: '',
     note: `At ₹${ENERGY_ASSUMPTIONS.tariffINRPerKWh} per kWh`,
     icon: IndianRupee,
@@ -55,9 +60,7 @@ const metrics = [
   },
   {
     title: 'Estimated CO₂',
-    value: SUMMARY_METRICS.estimatedEmissionsKgCO2e.toLocaleString('en-IN', {
-      maximumFractionDigits: 1,
-    }),
+    value: SUMMARY_METRICS.estimatedEmissionsKgCO2e,
     unit: 'kg CO₂e',
     note: 'Illustrative emissions',
     icon: Leaf,
@@ -65,7 +68,7 @@ const metrics = [
   },
   {
     title: 'Potential Savings',
-    value: SUMMARY_METRICS.potentialSavingsKWhPerWeek.toLocaleString('en-IN'),
+    value: SUMMARY_METRICS.potentialSavingsKWhPerWeek,
     unit: 'kWh',
     note: 'Possible in a simulation',
     icon: TrendingDown,
@@ -213,7 +216,12 @@ function MetricCard({ metric }) {
 
       <div className="mt-4 flex flex-wrap items-baseline gap-2">
         <span className="text-3xl font-bold tracking-tight text-[#142D27]">
-          {metric.value}
+          <AnimatedMetric
+  value={metric.value}
+  prefix={metric.title === "Estimated Cost" ? "₹" : ""}
+  suffix=""
+  decimals={metric.title === "Estimated CO₂" ? 1 : 0}
+/>
         </span>
 
         {metric.unit && (
@@ -456,9 +464,52 @@ function PagePlaceholder({ page }) {
   )
 }
 
+function AnimatedMetric({ value, prefix = "", suffix = "", decimals = 0 }) {
+  const numericValue = Number(
+    String(value).replace(/[₹,\s]/g, "").replace(/[^0-9.-]/g, "")
+  );
+
+  const count = useMotionValue(0);
+  const rounded = useTransform(count, (latest) =>
+    latest.toLocaleString("en-IN", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    })
+  );
+  const [displayValue, setDisplayValue] = useState("0");
+
+  useEffect(() => {
+    const controls = animate(count, numericValue, {
+      duration: 1.4,
+      ease: "easeOut",
+    });
+
+    const unsubscribe = rounded.on("change", setDisplayValue);
+
+    return () => {
+      controls.stop();
+      unsubscribe();
+    };
+  }, [count, numericValue, rounded]);
+
+  return (
+    <span>
+      {prefix}{displayValue}{suffix}
+    </span>
+  );
+}
+
+
 export default function App() {
-  const [activePage, setActivePage] = useState('Overview')
+  const [activePage, setActivePage] = useState("Landing");
   const [menuOpen, setMenuOpen] = useState(false)
+  if (activePage === "Landing" || activePage === "Home") { 
+  return (
+    <LandingPage
+      onEnter={() => setActivePage("Overview")}
+    />
+  );
+}
 
   return (
     <div className="min-h-screen bg-[#F7F8F4] text-[#142D27]">
@@ -540,7 +591,10 @@ export default function App() {
 
 
 
-{activePage === 'Overview' ? (
+
+{activePage === 'Home' ? (
+  <LandingPage onEnter={() => setActivePage('Overview')} />
+) : activePage === 'Overview' ? (
   <Overview setActivePage={setActivePage} />
 ) : activePage === 'Equipment' ? (
   <Equipment />
@@ -557,11 +611,15 @@ export default function App() {
 
 
 
+
           <footer className="py-8 text-center text-xs leading-5 text-[#64748B]">
             WattProof Twin · Demonstration interface · Sample data only
           </footer>
         </main>
       </div>
+       <AIChatbox />
     </div>
   )
+  
+ 
 }

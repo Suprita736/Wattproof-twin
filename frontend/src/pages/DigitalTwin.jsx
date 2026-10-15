@@ -1,3 +1,5 @@
+import { motion } from "motion/react";
+
 import { useEffect, useState } from 'react'
 import {
   Activity,
@@ -96,6 +98,180 @@ function calculateScenario(form) {
   }
 }
 
+function InteractiveBuilding({ equipment, baselineEnergy, proposedEnergy }) {
+  const [selectedFloor, setSelectedFloor] = useState(2);
+
+  const floors = [
+    { id: 0, name: "Ground floor", room: "Classrooms", icon: "💡" },
+    { id: 1, name: "First floor", room: "Computer lab", icon: "💻" },
+    { id: 2, name: "Second floor", room: "Climate control", icon: "❄️" },
+  ];
+
+  const reduction =
+    baselineEnergy > 0
+      ? Math.max(0, ((baselineEnergy - proposedEnergy) / baselineEnergy) * 100)
+      : 0;
+
+  return (
+    <section className="mb-6 overflow-hidden rounded-2xl border border-[#DDE5DD] bg-white p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#2E8B68]">
+            Interactive building
+          </p>
+          <h3 className="mt-1 text-xl font-bold text-[#142D27]">
+            Explore your energy twin
+          </h3>
+          <p className="mt-1 text-sm text-[#64748B]">
+            Select a floor to explore the building's illustrative energy zones.
+          </p>
+        </div>
+        <span className="rounded-full bg-[#B9F3D2]/50 px-3 py-1.5 text-xs font-semibold text-[#142D27]">
+          DEMO MODEL
+        </span>
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="relative flex min-h-[320px] items-center justify-center overflow-hidden rounded-2xl bg-[#142D27] p-5">
+          <div className="absolute inset-0 opacity-20"
+            style={{
+              backgroundImage:
+                "linear-gradient(#B9F3D2 1px, transparent 1px), linear-gradient(90deg, #B9F3D2 1px, transparent 1px)",
+              backgroundSize: "28px 28px",
+            }}
+          />
+
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="relative z-10 w-full max-w-[340px]"
+          >
+            <div className="mb-2 flex items-center justify-between text-xs text-[#B9F3D2]">
+              <span>WATTPROOF / BUILDING A</span>
+              <span>LIVE SIMULATION</span>
+            </div>
+
+            <div className="space-y-2">
+              {floors.slice().reverse().map((floor) => {
+                const active = selectedFloor === floor.id;
+
+                return (
+                  <motion.button
+                    key={floor.id}
+                    type="button"
+                    onClick={() => setSelectedFloor(floor.id)}
+                    whileHover={{ x: 5 }}
+                    whileTap={{ scale: 0.98 }}
+                    aria-pressed={active}
+                    className={`relative flex min-h-[72px] w-full items-center justify-between overflow-hidden rounded-lg border px-4 text-left transition-colors ${
+                      active
+                        ? "border-[#B9F3D2] bg-[#2E8B68] text-white shadow-[0_0_22px_rgba(185,243,210,0.2)]"
+                        : "border-white/15 bg-white/10 text-white hover:bg-white/15"
+                    }`}
+                  >
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest opacity-70">
+                        Floor {floor.id + 1}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold">
+                        {floor.room}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-1.5" aria-hidden="true">
+                      {[0, 1, 2, 3].map((window) => (
+                        <motion.span
+                          key={window}
+                          animate={{
+                            opacity: active ? [0.55, 1, 0.55] : 0.45,
+                          }}
+                          transition={{
+                            duration: 2,
+                            repeat: active ? Infinity : 0,
+                          }}
+                          className={`h-7 w-4 rounded-sm ${
+                            active ? "bg-[#B9F3D2]" : "bg-[#B9F3D2]/50"
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2 h-3 rounded-b-md bg-[#B9F3D2]/80" />
+            <p className="mt-3 text-center text-[10px] tracking-[0.25em] text-white/50">
+              ENERGY INTELLIGENCE MODEL
+            </p>
+          </motion.div>
+        </div>
+
+        <motion.div
+          key={selectedFloor}
+          initial={{ opacity: 0, x: 12 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex flex-col justify-center"
+        >
+          <p className="text-sm text-[#64748B]">Selected zone</p>
+          <h4 className="mt-1 text-xl font-bold text-[#142D27]">
+            {floors[selectedFloor].room}
+          </h4>
+          <p className="mt-1 text-sm text-[#64748B]">
+            {floors[selectedFloor].name}
+          </p>
+
+          <div className="mt-5 rounded-xl border border-[#E2E8E0] bg-[#F7F8F4] p-4">
+            <p className="text-xs text-[#64748B]">Selected equipment</p>
+            <p className="mt-1 font-semibold text-[#142D27]">{equipment}</p>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-[#64748B]">Baseline</p>
+                <p className="mt-1 text-lg font-bold text-[#142D27]">
+                  {baselineEnergy.toFixed(1)}
+                </p>
+                <p className="text-xs text-[#64748B]">kWh/week</p>
+              </div>
+              <div>
+                <p className="text-xs text-[#64748B]">Proposed</p>
+                <p className="mt-1 text-lg font-bold text-[#2E8B68]">
+                  {proposedEnergy.toFixed(1)}
+                </p>
+                <p className="text-xs text-[#64748B]">kWh/week</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <div className="flex justify-between gap-2 text-sm">
+              <span className="text-[#64748B]">Estimated reduction</span>
+              <span className="font-bold text-[#2E8B68]">
+                {reduction.toFixed(1)}%
+              </span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#E2E8E0]">
+              <motion.div
+                className="h-full rounded-full bg-[#2E8B68]"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(reduction, 100)}%` }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+              />
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs leading-5 text-[#64748B]">
+            Illustrative visualization only. Floor selection changes the
+            highlighted zone; energy values come from the current equipment
+            scenario, not measured floor-level sensors.
+          </p>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+
 function ResultCard({ title, value, unit, description, icon: Icon }) {
   return (
     <article className="rounded-2xl border border-[#E2E8E0] bg-white p-5">
@@ -116,6 +292,114 @@ function ResultCard({ title, value, unit, description, icon: Icon }) {
       <p className="mt-2 text-xs leading-5 text-[#64748B]">{description}</p>
     </article>
   )
+}
+
+function AnimatedBeforeAfter({ results }) {
+  const maximum = Math.max(results.baselineEnergy, results.proposedEnergy, 1);
+  const baselineWidth = (results.baselineEnergy / maximum) * 100;
+  const proposedWidth = (results.proposedEnergy / maximum) * 100;
+  const reduction = results.baselineEnergy > 0
+    ? ((results.baselineEnergy - results.proposedEnergy) /
+        results.baselineEnergy) * 100
+    : null;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45 }}
+      className="overflow-hidden rounded-2xl border border-[#B9F3D2] bg-white p-5 sm:p-6"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#2E8B68]">
+            Scenario comparison
+          </p>
+          <h3 className="mt-1 text-lg font-bold text-[#142D27]">
+            Before vs. after
+          </h3>
+          <p className="mt-1 text-sm text-[#64748B]">
+            Estimated weekly energy consumption
+          </p>
+        </div>
+
+        <span className="rounded-full bg-[#B9F3D2]/50 px-3 py-1.5 text-xs font-semibold text-[#142D27]">
+          SIMULATED
+        </span>
+      </div>
+
+      <div className="mt-6 space-y-5">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-[#142D27]">
+              Before · Current schedule
+            </span>
+            <span className="text-sm font-bold text-[#142D27]">
+              {results.baselineEnergy.toFixed(2)} kWh
+            </span>
+          </div>
+          <div className="h-4 overflow-hidden rounded-full bg-[#E2E8E0]">
+            <motion.div
+              key={`before-${results.baselineEnergy}`}
+              initial={{ width: 0 }}
+              animate={{ width: `${baselineWidth}%` }}
+              transition={{ duration: 0.9, ease: "easeOut" }}
+              className="h-full rounded-full bg-[#64748B]"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-[#142D27]">
+              After · Proposed schedule
+            </span>
+            <span className="text-sm font-bold text-[#2E8B68]">
+              {results.proposedEnergy.toFixed(2)} kWh
+            </span>
+          </div>
+          <div className="h-4 overflow-hidden rounded-full bg-[#E2E8E0]">
+            <motion.div
+              key={`after-${results.proposedEnergy}`}
+              initial={{ width: 0 }}
+              animate={{ width: `${proposedWidth}%` }}
+              transition={{ duration: 1, ease: "easeOut", delay: 0.15 }}
+              className="h-full rounded-full bg-[#2E8B68]"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-xl bg-[#F7F8F4] p-3">
+          <p className="text-xs text-[#64748B]">Energy difference</p>
+          <p className="mt-1 text-xl font-bold text-[#142D27]">
+            {Math.abs(results.energySaved).toFixed(2)} kWh
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-[#F7F8F4] p-3">
+          <p className="text-xs text-[#64748B]">Estimated cost difference</p>
+          <p className="mt-1 text-xl font-bold text-[#142D27]">
+            ₹{Math.abs(results.costSaved).toFixed(2)}
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-[#B9F3D2]/40 p-3">
+          <p className="text-xs text-[#64748B]">Energy reduction</p>
+          <p className="mt-1 text-xl font-bold text-[#2E8B68]">
+            {reduction === null ? "N/A" : `${reduction.toFixed(1)}%`}
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-4 text-xs leading-5 text-[#64748B]">
+        Estimates use your configured equipment power, units, schedule and
+        operating days. A negative energy reduction means the proposed
+        scenario uses more energy. Actual results may differ.
+      </p>
+    </motion.section>
+  );
 }
 
 function ComparisonChart({ results }) {
@@ -209,7 +493,7 @@ export default function DigitalTwin({ onSavePassport }) {
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  
+  const visualScenario = calculateScenario(form);
   useEffect(() => {
     try {
       const saved = localStorage.getItem('wattproof-selected-simulation')
@@ -441,6 +725,11 @@ export default function DigitalTwin({ onSavePassport }) {
           {notice}
         </div>
       )}
+      <InteractiveBuilding
+  equipment={form.equipment}
+  baselineEnergy={visualScenario.baselineEnergy}
+  proposedEnergy={visualScenario.proposedEnergy}
+/>
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 sm:p-6">
@@ -789,7 +1078,9 @@ export default function DigitalTwin({ onSavePassport }) {
                 />
               </div>
 
-              <ComparisonChart results={results} />
+              <AnimatedBeforeAfter results={results} />
+
+<ComparisonChart results={results} />
 
               <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 sm:p-6">
                 <h3 className="font-semibold text-[#142D27]">
