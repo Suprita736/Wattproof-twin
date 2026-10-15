@@ -1,0 +1,567 @@
+import Equipment from './pages/Equipment.jsx'
+import DigitalTwin from './pages/DigitalTwin.jsx'
+import AIInsights from "./pages/AIInsights";
+import ActionPassports from "./pages/ActionPassports";
+import {
+  SUMMARY_METRICS,
+  DAILY_ENERGY_READINGS,
+  EQUIPMENT_PROFILES,
+  ENERGY_ASSUMPTIONS,
+  calculateEnergyKWh,
+} from "./data/mockData";
+import { useState } from 'react'
+import {
+  LayoutDashboard,
+  Boxes,
+  SlidersHorizontal,
+  Lightbulb,
+  FileCheck2,
+  Search,
+  Bell,
+  Zap,
+  IndianRupee,
+  Leaf,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowRight,
+  Menu,
+  X,
+} from 'lucide-react'
+
+const navigation = [
+  { name: 'Overview', icon: LayoutDashboard },
+  { name: 'Equipment', icon: Boxes },
+  { name: 'Digital Twin', icon: SlidersHorizontal },
+  { name: 'AI Insights', icon: Lightbulb },
+  { name: 'Action Passports', icon: FileCheck2 },
+]
+
+const metrics = [
+  {
+    title: 'Energy Used',
+    value: SUMMARY_METRICS.energyUsedKWh.toLocaleString('en-IN'),
+    unit: 'kWh',
+    note: 'Across the illustrative week',
+    icon: Zap,
+    color: 'bg-[#B9F3D2] text-[#142D27]',
+  },
+  {
+    title: 'Estimated Cost',
+    value: `₹${SUMMARY_METRICS.estimatedCostINR.toLocaleString('en-IN')}`,
+    unit: '',
+    note: `At ₹${ENERGY_ASSUMPTIONS.tariffINRPerKWh} per kWh`,
+    icon: IndianRupee,
+    color: 'bg-blue-50 text-blue-700',
+  },
+  {
+    title: 'Estimated CO₂',
+    value: SUMMARY_METRICS.estimatedEmissionsKgCO2e.toLocaleString('en-IN', {
+      maximumFractionDigits: 1,
+    }),
+    unit: 'kg CO₂e',
+    note: 'Illustrative emissions',
+    icon: Leaf,
+    color: 'bg-[#B9F3D2] text-[#142D27]',
+  },
+  {
+    title: 'Potential Savings',
+    value: SUMMARY_METRICS.potentialSavingsKWhPerWeek.toLocaleString('en-IN'),
+    unit: 'kWh',
+    note: 'Possible in a simulation',
+    icon: TrendingDown,
+    color: 'bg-[#B9F3D2] text-[#142D27]',
+  },
+]
+
+const weeklyUsage = DAILY_ENERGY_READINGS.map((reading) => ({
+  day: reading.day,
+  value: reading.energyKWh,
+}))
+
+const equipmentUsage = EQUIPMENT_PROFILES.map((item) => {
+  const energy = calculateEnergyKWh({
+    ratedPowerW: item.ratedPowerW,
+    units: item.units,
+    hoursPerDay: item.hoursPerDay,
+    operatingDaysPerWeek: item.operatingDaysPerWeek,
+  })
+
+  const maxEnergy = Math.max(
+    ...EQUIPMENT_PROFILES.map((profile) =>
+      calculateEnergyKWh({
+        ratedPowerW: profile.ratedPowerW,
+        units: profile.units,
+        hoursPerDay: profile.hoursPerDay,
+        operatingDaysPerWeek: profile.operatingDaysPerWeek,
+      }),
+    ),
+  )
+
+  return {
+    name: item.name,
+    value: maxEnergy > 0 ? Math.round((energy / maxEnergy) * 100) : 0,
+    energy: `${energy.toLocaleString('en-IN', { maximumFractionDigits: 1 })} kWh`,
+  }
+})
+
+function Sidebar({ activePage, setActivePage, open, close }) {
+  return (
+    <>
+      {open && (
+        <button
+          aria-label="Close navigation overlay"
+          onClick={close}
+          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/10 bg-[#142D27] transition-transform duration-200 lg:translate-x-0 ${
+          open ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#B9F3D2] text-[#142D27]">
+              <Zap size={23} />
+            </div>
+
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-white">
+                WattProof
+              </h1>
+              <p className="text-xs text-white/65">
+                Twin · Energy intelligence
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={close}
+            aria-label="Close navigation"
+            className="rounded-lg p-2 text-white/70 hover:bg-white/10 lg:hidden"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-4 pt-7">
+          <p className="mb-3 px-3 text-xs font-semibold uppercase tracking-widest text-white/50">
+            Workspace
+          </p>
+
+          <nav className="space-y-1">
+            {navigation.map(({ name, icon: Icon }) => (
+              <button
+                key={name}
+                onClick={() => {
+                  setActivePage(name)
+                  close()
+                }}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition-colors ${
+                  activePage === name
+                    ? 'bg-[#B9F3D2] text-[#142D27]'
+                    : 'text-white/75 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Icon size={19} />
+                <span>{name}</span>
+
+                {activePage === name && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-[#2E8B68]" />
+                )}
+              </button>
+            ))}
+          </nav>
+        </div>
+
+        <div className="mt-auto p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            <div className="mb-2 flex items-center gap-2 text-[#B9F3D2]">
+              <Leaf size={18} />
+              <span className="text-sm font-semibold">Energy awareness</span>
+            </div>
+
+            <p className="text-xs leading-5 text-white/75">
+              Small operational changes can create meaningful savings.
+            </p>
+          </div>
+
+          <p className="mt-4 text-center text-xs text-white/45">
+            WattProof Twin · Hackathon MVP
+          </p>
+        </div>
+      </aside>
+    </>
+  )
+}
+
+function MetricCard({ metric }) {
+  const Icon = metric.icon
+
+  return (
+    <article className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 transition-shadow hover:shadow-md">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-medium text-[#64748B]">
+          {metric.title}
+        </p>
+
+        <span className={`rounded-xl p-2.5 ${metric.color}`}>
+          <Icon size={20} />
+        </span>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-baseline gap-2">
+        <span className="text-3xl font-bold tracking-tight text-[#142D27]">
+          {metric.value}
+        </span>
+
+        {metric.unit && (
+          <span className="text-sm text-[#64748B]">{metric.unit}</span>
+        )}
+      </div>
+
+      <p className="mt-2 text-xs leading-5 text-[#64748B]">
+        {metric.note}
+      </p>
+    </article>
+  )
+}
+
+function EnergyTrendChart() {
+  const maxValue = Math.max(...weeklyUsage.map((item) => item.value))
+
+  return (
+    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-[#142D27]">
+            Energy consumption
+          </h3>
+          <p className="mt-1 text-sm text-[#64748B]">
+            Daily usage · Illustrative kWh values
+          </p>
+        </div>
+
+        <span className="rounded-lg bg-[#F7F8F4] px-3 py-2 text-xs font-medium text-[#64748B]">
+          Last 7 days
+        </span>
+      </div>
+
+      <div
+        className="mt-7 flex h-48 items-end justify-between gap-2 sm:gap-4"
+        role="img"
+        aria-label="Illustrative weekly energy usage chart"
+      >
+        {weeklyUsage.map((item) => (
+          <div
+            key={item.day}
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-3"
+          >
+            <div className="flex h-full w-full items-end">
+              <div
+                className={`w-full rounded-t-lg transition-colors ${
+                  item.day === 'Thu'
+                    ? 'bg-[#2E8B68]'
+                    : 'bg-[#B9F3D2] hover:bg-[#2E8B68]/50'
+                }`}
+                style={{ height: `${(item.value / maxValue) * 100}%` }}
+                title={`${item.day}: illustrative value ${item.value}`}
+              />
+            </div>
+
+            <span className="text-xs text-[#64748B]">{item.day}</span>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-4 border-t border-[#E2E8E0] pt-4 text-xs leading-5 text-[#64748B]">
+        Demo visualization only. Values will be replaced with configured
+        energy readings when the data source is available.
+      </p>
+    </section>
+  )
+}
+
+function EquipmentUsageChart() {
+  return (
+    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 sm:p-6">
+      <div>
+        <h3 className="font-semibold text-[#142D27]">
+          Usage by equipment
+        </h3>
+        <p className="mt-1 text-sm text-[#64748B]">
+          Illustrative estimated consumption
+        </p>
+      </div>
+
+      <div className="mt-6 space-y-5">
+        {equipmentUsage.map((item) => (
+          <div key={item.name}>
+            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+              <span className="font-medium text-[#142D27]">
+                {item.name}
+              </span>
+              <span className="shrink-0 text-[#64748B]">
+                {item.energy}
+              </span>
+            </div>
+
+            <div className="h-2.5 overflow-hidden rounded-full bg-[#EEF1ED]">
+              <div
+                className="h-full rounded-full bg-[#2E8B68]"
+                style={{ width: `${item.value}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-6 border-t border-[#E2E8E0] pt-4 text-xs leading-5 text-[#64748B]">
+        Estimates are examples, not readings from real equipment.
+      </p>
+    </section>
+  )
+}
+
+function Overview({ setActivePage }) {
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <MetricCard key={metric.title} metric={metric} />
+        ))}
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
+        <EnergyTrendChart />
+        <EquipmentUsageChart />
+      </div>
+
+      <section className="mt-6 overflow-hidden rounded-2xl border border-[#B9F3D2] bg-white">
+        <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div className="flex items-start gap-4">
+            <div className="rounded-xl bg-[#B9F3D2]/60 p-3 text-[#142D27]">
+              <Lightbulb size={23} />
+            </div>
+
+            <div className="max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-semibold text-[#142D27]">
+                  Opportunity detected
+                </h3>
+
+                <span className="rounded-full bg-[#B9F3D2]/60 px-2.5 py-1 text-xs font-medium text-[#142D27]">
+                  Example
+                </span>
+              </div>
+
+              <p className="mt-2 text-sm leading-6 text-[#64748B]">
+                Explore whether reducing the configured air-conditioning
+                schedule could lower energy use. The potential benefit must
+                be calculated from the selected equipment and operating hours.
+              </p>
+
+              <p className="mt-2 text-xs text-[#64748B]">
+                Simulated scenario · Not a measured or guaranteed saving
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setActivePage('Digital Twin')}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#246F53]"
+          >
+            Explore Digital Twin <ArrowRight size={17} />
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-6 rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 sm:p-6">
+        <h3 className="font-semibold text-[#142D27]">Recent activity</h3>
+
+        <div className="mt-4 divide-y divide-[#E2E8E0]">
+          {[
+            {
+              title: 'Demo dashboard loaded',
+              detail: 'Illustrative energy metrics',
+              status: 'Simulated',
+            },
+            {
+              title: 'Equipment usage overview',
+              detail: 'Example equipment profiles',
+              status: 'Demo data',
+            },
+            {
+              title: 'Action Passport workflow',
+              detail: 'Ready for the next implementation step',
+              status: 'Not verified',
+            },
+          ].map((activity) => (
+            <div
+              key={activity.title}
+              className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <p className="text-sm font-medium text-[#142D27]">
+                  {activity.title}
+                </p>
+                <p className="mt-1 text-xs text-[#64748B]">
+                  {activity.detail}
+                </p>
+              </div>
+
+              <span className="w-fit rounded-full bg-[#F7F8F4] px-3 py-1 text-xs text-[#64748B]">
+                {activity.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+}
+
+function PagePlaceholder({ page }) {
+  const descriptions = {
+    Equipment:
+      'Review equipment profiles, add appliances, and prepare the image detection workflow.',
+    'Digital Twin':
+      'Compare baseline and proposed operating schedules to estimate energy, cost, and emissions savings.',
+    'AI Insights':
+      'Review explainable recommendations based on configured data and calculated metrics.',
+    'Action Passports':
+      'Track proposed interventions and compare predictions with clearly labeled simulated follow-up readings.',
+  }
+
+  return (
+    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-8 sm:p-12">
+      <div className="mx-auto max-w-lg text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#B9F3D2] text-[#142D27]">
+          <Zap size={27} />
+        </div>
+
+        <h2 className="mt-5 text-xl font-bold text-[#142D27]">{page}</h2>
+
+        <p className="mt-3 text-sm leading-6 text-[#64748B]">
+          {descriptions[page]}
+        </p>
+
+        <p className="mt-4 text-xs text-[#64748B]">
+          This page is a placeholder. Its functionality will be implemented
+          next.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+export default function App() {
+  const [activePage, setActivePage] = useState('Overview')
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  return (
+    <div className="min-h-screen bg-[#F7F8F4] text-[#142D27]">
+      <Sidebar
+        activePage={activePage}
+        setActivePage={setActivePage}
+        open={menuOpen}
+        close={() => setMenuOpen(false)}
+      />
+
+      <div className="min-h-screen lg:pl-64">
+        <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-[#E2E8E0] bg-white/95 px-4 backdrop-blur sm:px-8">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open navigation"
+              className="rounded-lg p-2 text-[#64748B] hover:bg-[#F7F8F4] lg:hidden"
+            >
+              <Menu size={22} />
+            </button>
+
+            <div>
+              <p className="text-xs text-[#64748B]">
+                Workspace / {activePage}
+              </p>
+              <h2 className="mt-1 text-lg font-bold text-[#142D27]">
+                {activePage}
+              </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-4">
+            <span className="hidden items-center gap-2 rounded-full border border-[#B9F3D2] bg-[#B9F3D2]/40 px-3 py-2 text-xs font-semibold text-[#142D27] sm:inline-flex">
+              <span className="h-2 w-2 rounded-full bg-[#2E8B68]" />
+              SIMULATED DATA
+            </span>
+
+            <button
+              aria-label="Search is not available yet"
+              title="Search will be implemented later"
+              className="rounded-xl p-2.5 text-[#64748B] hover:bg-[#F7F8F4]"
+            >
+              <Search size={19} />
+            </button>
+
+            <button
+              aria-label="Notifications are not available yet"
+              title="Notifications will be implemented later"
+              className="rounded-xl p-2.5 text-[#64748B] hover:bg-[#F7F8F4]"
+            >
+              <Bell size={19} />
+            </button>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[1600px] p-4 sm:p-8">
+          <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-[#2E8B68]">
+                Energy Savings That Prove Themselves
+              </p>
+
+              <h1 className="mt-2 text-2xl font-bold tracking-tight text-[#142D27] sm:text-3xl">
+                {activePage === 'Overview' ? 'Energy overview' : activePage}
+              </h1>
+
+              <p className="mt-2 text-sm text-[#64748B]">
+                Monitor, explore and simulate energy-saving opportunities.
+              </p>
+            </div>
+
+            <span className="inline-flex w-fit items-center gap-2 rounded-xl border border-[#E2E8E0] bg-white px-3 py-2.5 text-sm text-[#64748B]">
+              <ArrowUpRight size={17} className="text-[#2E8B68]" />
+              Demo workspace
+            </span>
+          </div>
+
+          
+
+
+
+{activePage === 'Overview' ? (
+  <Overview setActivePage={setActivePage} />
+) : activePage === 'Equipment' ? (
+  <Equipment />
+) : activePage === 'Digital Twin' ? (
+  <DigitalTwin onSavePassport={() => setActivePage('Action Passports')} />
+) : activePage === 'AI Insights' ? (
+  <AIInsights setActivePage={setActivePage} />
+) : activePage === 'Action Passports' ? (
+  <ActionPassports />
+) : (
+  <PagePlaceholder page={activePage} />
+)}
+
+
+
+
+          <footer className="py-8 text-center text-xs leading-5 text-[#64748B]">
+            WattProof Twin · Demonstration interface · Sample data only
+          </footer>
+        </main>
+      </div>
+    </div>
+  )
+}

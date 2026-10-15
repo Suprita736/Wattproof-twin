@@ -1,0 +1,567 @@
+import {
+  RECOMMENDATIONS,
+  calculateSavings as calculateSharedSavings,
+} from "../data/mockData";
+import { useState } from "react";
+import {
+  BrainCircuit,
+  Zap,
+  IndianRupee,
+  Leaf,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowRight,
+  Lightbulb,
+} from "lucide-react";
+
+
+
+
+
+function calculateSavings(item) {
+  const savings = calculateSharedSavings({
+    ratedPowerW: item.ratedPowerW,
+    units: item.units,
+    baselineHours: item.baselineHours,
+    proposedHours: item.proposedHours,
+    operatingDaysPerWeek: item.operatingDaysPerWeek,
+    tariffINRPerKWh: item.tariffINRPerKWh,
+    emissionsFactorKgPerKWh: item.emissionsFactorKgPerKWh,
+  });
+
+  return {
+    energy: savings.energySavedKWh,
+    cost: savings.costSavedINR,
+    emissions: savings.emissionsSavedKgCO2e,
+  };
+}
+
+
+
+export default function AIInsights({ setActivePage }) {
+  const [selected, setSelected] = useState(null);
+  const [savedRecommendations, setSavedRecommendations] = useState(() => {
+  try {
+    return JSON.parse(
+      localStorage.getItem("wattproof-saved-recommendations") || "[]"
+    );
+  } catch {
+    return [];
+  }
+});
+
+  function openSimulator(item) {
+    try {
+      localStorage.setItem(
+        "wattproof-selected-simulation",
+        JSON.stringify({
+          equipment: item.equipment,
+          ratedPower: item.ratedPowerW,
+          units: item.units,
+          baselineHours: item.baselineHours,
+          proposedHours: item.proposedHours,
+          operatingDays: item.operatingDaysPerWeek,
+          tariff: item.tariffINRPerKWh,
+          emissionsFactor: item.emissionsFactorKgPerKWh,
+        })
+      );
+    } catch (error) {
+      console.error("Could not save simulation inputs:", error);
+    }
+
+    if (setActivePage) {
+      setActivePage("Digital Twin");
+    } else {
+      alert(
+        "Recommendation selected. Open Digital Twin to configure the simulation."
+      );
+    }
+  }
+
+function createActionPassport(item) {
+  const savings = calculateSavings(item);
+
+  const newPassport = {
+    id: `AP-${Date.now()}`,
+    equipment: item.equipment,
+    action: item.action,
+    status: "Draft",
+    createdAt: new Date().toISOString(),
+    dataMode: "SIMULATED",
+
+    assumptions: {
+      ratedPower: item.ratedPowerW,
+      units: item.units,
+      baselineHours: item.baselineHours,
+      proposedHours: item.proposedHours,
+      operatingDays: item.operatingDaysPerWeek,
+      tariff: item.tariffINRPerKWh,
+      emissionsFactor: item.emissionsFactor,
+    },
+
+    prediction: {
+      energySaved: savings.energy,
+      costSaved: savings.cost,
+      emissionsSaved: savings.emissions,
+    },
+  };
+
+  try {
+    const existing = JSON.parse(
+      localStorage.getItem("wattproof-action-passports") || "[]"
+    );
+
+    if (!Array.isArray(existing)) {
+      throw new Error("Invalid Action Passports data");
+    }
+
+    localStorage.setItem(
+      "wattproof-action-passports",
+      JSON.stringify([...existing, newPassport])
+    );
+
+    if (setActivePage) {
+      setActivePage("Action Passports");
+    } else {
+      alert("Action Passport created successfully!");
+    }
+  } catch (error) {
+    console.error("Could not create Action Passport:", error);
+    alert("Could not create the Action Passport. Please try again.");
+  }
+}
+
+  
+function saveRecommendation(item) {
+  const exists = savedRecommendations.includes(item.id);
+
+  const updated = exists
+    ? savedRecommendations.filter((id) => id !== item.id)
+    : [...savedRecommendations, item.id];
+
+  setSavedRecommendations(updated);
+
+  try {
+    localStorage.setItem(
+      "wattproof-saved-recommendations",
+      JSON.stringify(updated)
+    );
+  } catch (error) {
+    console.error("Could not save recommendation:", error);
+  }
+}
+
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="mb-2 text-sm font-semibold uppercase tracking-wider text-[#2E8B68]">
+          Diagnose → Recommend
+        </p>
+
+        <h1 className="text-3xl font-bold text-[#142D27]">
+          AI Energy Insights
+        </h1>
+
+        <p className="mt-2 max-w-3xl text-slate-500">
+          Explore explainable energy-saving recommendations, understand
+          the reasoning behind each suggestion, and test potential
+          improvements in the Digital Twin.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+        <div className="flex items-start gap-3">
+          <BrainCircuit className="mt-1 shrink-0 text-[#2E8B68]" size={28} />
+
+          <div>
+            <h2 className="font-semibold text-[#142D27]">
+              Energy Recommendation Engine
+            </h2>
+
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              These recommendations use predefined demonstration scenarios
+              and transparent calculations. They are not generated by a
+              connected AI model and are not based on live sensor readings.
+            </p>
+
+            <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2E8B68]">
+              DEMO DATA · EXPLAINABLE CALCULATIONS
+            </span>
+          </div>
+        </div>
+      </div>
+    
+{/* SAVED RECOMMENDATIONS */}
+<section className="space-y-4">
+  <div>
+    <h2 className="text-xl font-bold text-[#142D27]">
+      Saved Recommendations
+    </h2>
+    <p className="mt-1 text-sm text-slate-500">
+      Your bookmarked energy-saving ideas, available whenever you return.
+    </p>
+  </div>
+
+  {savedRecommendations.length === 0 ? (
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+      <p className="font-semibold text-[#142D27]">
+        No saved recommendations yet
+      </p>
+      <p className="mt-2 text-sm text-slate-500">
+        Click Save idea on any recommendation above to add it here.
+      </p>
+    </div>
+  ) : (
+    <div className="grid gap-4 xl:grid-cols-2">
+      {RECOMMENDATIONS
+        .filter((item) => savedRecommendations.includes(item.id))
+        .map((item) => {
+          const savings = calculateSavings(item);
+
+          return (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-emerald-100 bg-white p-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-[#2E8B68]">
+                    {item.category || "Energy"}
+                  </span>
+
+                  <h3 className="mt-1 text-lg font-bold text-[#142D27]">
+                    {item.equipment}
+                  </h3>
+                </div>
+
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <CheckCircle2
+                    size={13}
+                    className="mr-1 inline"
+                  />
+                  Saved
+                </span>
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                {item.action}
+              </p>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="rounded-lg bg-emerald-50 p-3">
+                  <p className="text-lg font-bold text-[#142D27]">
+                    {savings.energy}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    kWh/week
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-emerald-50 p-3">
+                  <p className="text-lg font-bold text-[#142D27]">
+                    ₹{savings.cost}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    /week
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-emerald-50 p-3">
+                  <p className="text-lg font-bold text-[#142D27]">
+                    {Number(savings.emissions.toFixed(2))}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    kg CO₂e/week
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  onClick={() => openSimulator(item)}
+                  className="flex-1 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
+                >
+                  Test in Digital Twin →
+                </button>
+
+                <button
+                  onClick={() => saveRecommendation(item)}
+                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                >
+                  Remove saved idea
+                </button>
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  )}
+</section>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <Zap className="mb-3 text-[#2E8B68]" size={23} />
+          <p className="text-sm text-slate-500">Opportunities identified</p>
+          <p className="mt-2 text-3xl font-bold text-[#142D27]">
+            {RECOMMENDATIONS.length}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <IndianRupee className="mb-3 text-[#2E8B68]" size={23} />
+          <p className="text-sm text-slate-500">Potential weekly savings</p>
+          <p className="mt-2 text-3xl font-bold text-[#142D27]">
+            ₹
+            {RECOMMENDATIONS
+              .reduce((sum, item) => sum + calculateSavings(item).cost, 0)
+              .toLocaleString("en-IN")}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-5">
+          <Leaf className="mb-3 text-[#2E8B68]" size={23} />
+          <p className="text-sm text-slate-500">Potential weekly energy savings</p>
+          <p className="mt-2 text-3xl font-bold text-[#142D27]">
+            {RECOMMENDATIONS.reduce(
+              (sum, item) => sum + calculateSavings(item).energy,
+              0
+            )}{" "}
+            kWh
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-[#142D27]">
+            Recommended actions
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Review the evidence before testing an action.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        {RECOMMENDATIONS.map((item) => {
+          const savings = calculateSavings(item);
+          const isSaved = savedRecommendations.includes(item.id);
+
+          return (
+            <div
+              key={item.id}
+              className="rounded-2xl border border-slate-200 bg-white p-5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    {item.category || "Energy"}
+                  </p>
+                  <h3 className="mt-1 text-xl font-bold text-[#142D27]">
+                    {item.equipment}
+                  </h3>
+                </div>
+
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    item.priority === "High"
+                      ? "bg-rose-100 text-rose-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {item.priority} priority
+                </span>
+              </div>
+
+              <div className="mt-4 flex items-start gap-3 rounded-xl bg-[#F7F8F4] p-4">
+                <AlertTriangle
+                  size={19}
+                  className="mt-0.5 shrink-0 text-amber-600"
+                />
+                <div>
+                  <p className="font-semibold text-[#142D27]">
+                    {item.issue}
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    {item.evidence}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-sm font-semibold text-[#142D27]">
+                  Suggested action
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {item.action}
+                </p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-emerald-50 p-3">
+                  <Zap size={17} className="text-[#2E8B68]" />
+                  <p className="mt-2 text-lg font-bold text-[#142D27]">
+                    {savings.energy}
+                  </p>
+                  <p className="text-xs text-slate-500">kWh/week</p>
+                </div>
+
+                <div className="rounded-xl bg-emerald-50 p-3">
+                  <IndianRupee size={17} className="text-[#2E8B68]" />
+                  <p className="mt-2 text-lg font-bold text-[#142D27]">
+                    ₹{savings.cost}
+                  </p>
+                  <p className="text-xs text-slate-500">/week</p>
+                </div>
+
+                <div className="rounded-xl bg-emerald-50 p-3">
+                  <Leaf size={17} className="text-[#2E8B68]" />
+                  <p className="mt-2 text-lg font-bold text-[#142D27]">
+                    {savings.emissions}
+                  </p>
+                  <p className="text-xs text-slate-500">kg CO₂e/week</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelected(item)}
+                className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-[#142D27] hover:bg-slate-50"
+              >
+                View reasoning
+              </button>
+
+             
+<div className="mt-3 flex flex-col gap-2">
+  <button
+    onClick={() => openSimulator(item)}
+    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
+  >
+    Test in Digital Twin
+    <ArrowRight size={16} />
+  </button>
+
+  <div className="flex flex-col gap-2 sm:flex-row">
+    <button
+      onClick={() => createActionPassport(item)}
+      className="flex-1 rounded-xl bg-[#142D27] px-4 py-3 text-sm font-semibold text-white hover:bg-[#24483D]"
+    >
+      + Create Action Passport
+    </button>
+
+    <button
+      onClick={() => saveRecommendation(item)}
+      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-[#142D27] hover:bg-slate-50"
+    >
+      <CheckCircle2 size={16} />
+      {isSaved ? "Saved" : "Save idea"}
+    </button>
+  </div>
+</div>
+
+            </div>
+          );
+        })}
+      </div>
+
+      {selected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-[#2E8B68]">
+                  EXPLAINABLE RECOMMENDATION
+                </p>
+                <h2 className="mt-2 text-2xl font-bold text-[#142D27]">
+                  {selected.equipment}
+                </h2>
+              </div>
+
+              <button
+                onClick={() => setSelected(null)}
+                className="text-slate-500 hover:text-[#142D27]"
+                aria-label="Close reasoning"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600">
+              <div>
+                <h3 className="font-semibold text-[#142D27]">
+                  1. Issue identified
+                </h3>
+                <p>{selected.issue}</p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-[#142D27]">
+                  2. Evidence used
+                </h3>
+                <p>{selected.evidence}</p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-[#142D27]">
+                  3. Calculation
+                </h3>
+                <p>
+                  Estimated energy savings = rated power × number of units ×
+                  reduced hours per day × operating days per week ÷ 1,000.
+                </p>
+                <p className="mt-2 rounded-lg bg-[#F7F8F4] p-3 font-medium text-[#142D27]">
+                  {selected.ratedPowerW} W × {selected.units} units ×{" "}
+                  {selected.baselineHours - selected.proposedHours} fewer
+                  hour(s)/day × {selected.operatingDaysPerWeek} days ÷ 1,000 ={" "}
+                  {calculateSavings(selected).energy} kWh/week
+                </p>
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-[#142D27]">
+                  4. Assumptions and limitations
+                </h3>
+                <p>
+                  This estimate assumes constant rated power and the same
+                  operating schedule each week. Actual consumption can differ
+                  due to load variation, occupancy, weather, and equipment
+                  efficiency. The scenario is illustrative, not a measured
+                  fault or a prediction from a trained AI model.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                const item = selected;
+                setSelected(null);
+                openSimulator(item);
+              }}
+              className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 font-semibold text-white hover:bg-[#246D52]"
+            >
+              Test this action
+              <ArrowRight size={17} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <Lightbulb className="mt-1 text-[#2E8B68]" />
+          <div>
+            <h3 className="font-semibold text-[#142D27]">
+              What happens next?
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              Select an action to test its assumptions in the Digital Twin.
+              After reviewing the simulation, save an Action Passport to
+              track its predicted impact and run a clearly labelled simulated
+              follow-up.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
