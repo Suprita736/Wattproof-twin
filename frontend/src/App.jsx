@@ -7,13 +7,11 @@ import LandingPage from "./pages/LandingPage";
 import { motion, useMotionValue, useTransform, animate } from "motion/react";
 import { Home } from "lucide-react";
 import {
-  SUMMARY_METRICS,
-  DAILY_ENERGY_READINGS,
-  EQUIPMENT_PROFILES,
-  ENERGY_ASSUMPTIONS,
-  calculateEnergyKWh,
+  ENERGY_ASSUMPTIONS
 } from "./data/mockData";
+
 import { useState, useEffect } from "react";
+import { getEnergySummary } from './api'
 import {
   LayoutDashboard,
   Boxes,
@@ -41,71 +39,93 @@ const navigation = [
   { name: 'Action Passports', icon: FileCheck2 },
 ]
 
-const metrics = [
-  {
-    title: 'Energy Used',
-    value: SUMMARY_METRICS.energyUsedKWh,
-    unit: 'kWh',
-    note: 'Across the illustrative week',
-    icon: Zap,
-    color: 'bg-[#B9F3D2] text-[#142D27]',
-  },
-  {
-    title: 'Estimated Cost',
-    value: SUMMARY_METRICS.estimatedCostINR,
-    unit: '',
-    note: `At ₹${ENERGY_ASSUMPTIONS.tariffINRPerKWh} per kWh`,
-    icon: IndianRupee,
-    color: 'bg-blue-50 text-blue-700',
-  },
-  {
-    title: 'Estimated CO₂',
-    value: SUMMARY_METRICS.estimatedEmissionsKgCO2e,
-    unit: 'kg CO₂e',
-    note: 'Illustrative emissions',
-    icon: Leaf,
-    color: 'bg-[#B9F3D2] text-[#142D27]',
-  },
-  {
-    title: 'Potential Savings',
-    value: SUMMARY_METRICS.potentialSavingsKWhPerWeek,
-    unit: 'kWh',
-    note: 'Possible in a simulation',
-    icon: TrendingDown,
-    color: 'bg-[#B9F3D2] text-[#142D27]',
-  },
-]
 
-const weeklyUsage = DAILY_ENERGY_READINGS.map((reading) => ({
-  day: reading.day,
-  value: reading.energyKWh,
-}))
-
-const equipmentUsage = EQUIPMENT_PROFILES.map((item) => {
-  const energy = calculateEnergyKWh({
-    ratedPowerW: item.ratedPowerW,
-    units: item.units,
-    hoursPerDay: item.hoursPerDay,
-    operatingDaysPerWeek: item.operatingDaysPerWeek,
-  })
-
-  const maxEnergy = Math.max(
-    ...EQUIPMENT_PROFILES.map((profile) =>
-      calculateEnergyKWh({
-        ratedPowerW: profile.ratedPowerW,
-        units: profile.units,
-        hoursPerDay: profile.hoursPerDay,
-        operatingDaysPerWeek: profile.operatingDaysPerWeek,
-      }),
-    ),
-  )
-
-  return {
-    name: item.name,
-    value: maxEnergy > 0 ? Math.round((energy / maxEnergy) * 100) : 0,
-    energy: `${energy.toLocaleString('en-IN', { maximumFractionDigits: 1 })} kWh`,
+function buildMetrics(summary, loading) {
+  if (loading || !summary) {
+    return [
+      {
+        title: 'Energy Used',
+        value: loading ? '…' : '—',
+        unit: 'kWh',
+        note: 'Estimated weekly consumption',
+        icon: Zap,
+        color: 'bg-[#B9F3D2] text-[#142D27]',
+      },
+      {
+        title: 'Estimated Cost',
+        value: '—',
+        unit: '',
+        note: 'Weekly estimate',
+        icon: IndianRupee,
+        color: 'bg-blue-50 text-blue-700',
+      },
+      {
+        title: 'Estimated CO₂',
+        value: '—',
+        unit: 'kg CO₂e',
+        note: 'Weekly estimate',
+        icon: Leaf,
+        color: 'bg-[#B9F3D2] text-[#142D27]',
+      },
+      {
+        title: 'Potential Savings',
+        value: '—',
+        unit: 'kWh',
+        note: 'Run a Digital Twin simulation',
+        icon: TrendingDown,
+        color: 'bg-[#B9F3D2] text-[#142D27]',
+      },
+    ]
   }
-})
+
+  const weeklyEnergy = Number(summary.total_weekly_energy_kwh) || 0
+  const tariff = ENERGY_ASSUMPTIONS.tariffINRPerKWh
+  const emissionsFactor = ENERGY_ASSUMPTIONS.emissionsFactorKgPerKWh
+
+  return [
+    {
+      title: 'Energy Used',
+      value: weeklyEnergy.toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+      }),
+      unit: 'kWh',
+      note: 'Estimated weekly consumption from saved equipment',
+      icon: Zap,
+      color: 'bg-[#B9F3D2] text-[#142D27]',
+    },
+    {
+      title: 'Estimated Cost',
+      value: `₹${(weeklyEnergy * tariff).toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+      })}`,
+      unit: '',
+      note: `Weekly estimate at ₹${tariff}/kWh`,
+      icon: IndianRupee,
+      color: 'bg-blue-50 text-blue-700',
+    },
+    {
+      title: 'Estimated CO₂',
+      value: (weeklyEnergy * emissionsFactor).toLocaleString('en-IN', {
+        maximumFractionDigits: 2,
+      }),
+      unit: 'kg CO₂e',
+      note: 'Estimated weekly emissions',
+      icon: Leaf,
+      color: 'bg-[#B9F3D2] text-[#142D27]',
+    },
+    {
+      title: 'Potential Savings',
+      value: '—',
+      unit: 'kWh',
+      note: 'Run a Digital Twin simulation',
+      icon: TrendingDown,
+      color: 'bg-[#B9F3D2] text-[#142D27]',
+    },
+  ]
+}
+
+
+
 
 function Sidebar({ activePage, setActivePage, open, close }) {
   return (
@@ -119,9 +139,8 @@ function Sidebar({ activePage, setActivePage, open, close }) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/10 bg-[#142D27] transition-transform duration-200 lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-white/10 bg-[#142D27] transition-transform duration-200 lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
           <div className="flex items-center gap-3">
@@ -161,11 +180,10 @@ function Sidebar({ activePage, setActivePage, open, close }) {
                   setActivePage(name)
                   close()
                 }}
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition-colors ${
-                  activePage === name
-                    ? 'bg-[#B9F3D2] text-[#142D27]'
-                    : 'text-white/75 hover:bg-white/10 hover:text-white'
-                }`}
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition-colors ${activePage === name
+                  ? 'bg-[#B9F3D2] text-[#142D27]'
+                  : 'text-white/75 hover:bg-white/10 hover:text-white'
+                  }`}
               >
                 <Icon size={19} />
                 <span>{name}</span>
@@ -217,11 +235,11 @@ function MetricCard({ metric }) {
       <div className="mt-4 flex flex-wrap items-baseline gap-2">
         <span className="text-3xl font-bold tracking-tight text-[#142D27]">
           <AnimatedMetric
-  value={metric.value}
-  prefix={metric.title === "Estimated Cost" ? "₹" : ""}
-  suffix=""
-  decimals={metric.title === "Estimated CO₂" ? 1 : 0}
-/>
+            value={metric.value}
+            prefix={metric.title === "Estimated Cost" ? "₹" : ""}
+            suffix=""
+            decimals={metric.title === "Estimated CO₂" ? 1 : 0}
+          />
         </span>
 
         {metric.unit && (
@@ -236,105 +254,164 @@ function MetricCard({ metric }) {
   )
 }
 
-function EnergyTrendChart() {
-  const maxValue = Math.max(...weeklyUsage.map((item) => item.value))
+
+function EnergyTrendChart({ summary }) {
+  const weeklyEnergy = Number(summary?.total_weekly_energy_kwh) || 0
+  const dailyAverage = weeklyEnergy / 7
 
   return (
-    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-[#142D27]">
-            Energy consumption
-          </h3>
-          <p className="mt-1 text-sm text-[#64748B]">
-            Daily usage · Illustrative kWh values
-          </p>
+    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm sm:p-6">
+      <h3 className="font-semibold text-[#142D27]">
+        Energy consumption
+      </h3>
+      <p className="mt-1 text-sm text-[#64748B]">
+        Estimated usage from saved equipment
+      </p>
+
+      <div className="mt-6 rounded-xl bg-[#F7F8F4] p-5">
+        <p className="text-sm text-[#64748B]">
+          Estimated weekly energy
+        </p>
+        <p className="mt-2 text-3xl font-bold text-[#142D27]">
+          {weeklyEnergy.toLocaleString('en-IN', {
+            maximumFractionDigits: 2,
+          })} kWh
+        </p>
+
+        <div className="mt-5 h-3 overflow-hidden rounded-full bg-[#E2E8E0]">
+          <div
+            className="h-full rounded-full bg-[#2E8B68]"
+            style={{ width: weeklyEnergy > 0 ? '100%' : '0%' }}
+          />
         </div>
 
-        <span className="rounded-lg bg-[#F7F8F4] px-3 py-2 text-xs font-medium text-[#64748B]">
-          Last 7 days
-        </span>
-      </div>
-
-      <div
-        className="mt-7 flex h-48 items-end justify-between gap-2 sm:gap-4"
-        role="img"
-        aria-label="Illustrative weekly energy usage chart"
-      >
-        {weeklyUsage.map((item) => (
-          <div
-            key={item.day}
-            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-3"
-          >
-            <div className="flex h-full w-full items-end">
-              <div
-                className={`w-full rounded-t-lg transition-colors ${
-                  item.day === 'Thu'
-                    ? 'bg-[#2E8B68]'
-                    : 'bg-[#B9F3D2] hover:bg-[#2E8B68]/50'
-                }`}
-                style={{ height: `${(item.value / maxValue) * 100}%` }}
-                title={`${item.day}: illustrative value ${item.value}`}
-              />
-            </div>
-
-            <span className="text-xs text-[#64748B]">{item.day}</span>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-4 border-t border-[#E2E8E0] pt-4 text-xs leading-5 text-[#64748B]">
-        Demo visualization only. Values will be replaced with configured
-        energy readings when the data source is available.
-      </p>
-    </section>
-  )
-}
-
-function EquipmentUsageChart() {
-  return (
-    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm shadow-[#142D27]/5 sm:p-6">
-      <div>
-        <h3 className="font-semibold text-[#142D27]">
-          Usage by equipment
-        </h3>
-        <p className="mt-1 text-sm text-[#64748B]">
-          Illustrative estimated consumption
+        <p className="mt-4 text-sm text-[#64748B]">
+          Average per calendar day: {dailyAverage.toFixed(2)} kWh
         </p>
       </div>
 
-      <div className="mt-6 space-y-5">
-        {equipmentUsage.map((item) => (
-          <div key={item.name}>
-            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-              <span className="font-medium text-[#142D27]">
-                {item.name}
-              </span>
-              <span className="shrink-0 text-[#64748B]">
-                {item.energy}
-              </span>
-            </div>
-
-            <div className="h-2.5 overflow-hidden rounded-full bg-[#EEF1ED]">
-              <div
-                className="h-full rounded-full bg-[#2E8B68]"
-                style={{ width: `${item.value}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <p className="mt-6 border-t border-[#E2E8E0] pt-4 text-xs leading-5 text-[#64748B]">
-        Estimates are examples, not readings from real equipment.
+      <p className="mt-4 text-xs leading-5 text-[#64748B]">
+        These are estimates based on rated power and operating schedules,
+        not daily meter readings.
       </p>
     </section>
   )
 }
 
+
+
+function EquipmentUsageChart({ summary }) {
+  const items = summary?.equipment_breakdown || []
+  const maxEnergy = Math.max(
+    0,
+    ...items.map((item) => Number(item.weekly_energy_kwh) || 0)
+  )
+
+  return (
+    <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 shadow-sm sm:p-6">
+      <h3 className="font-semibold text-[#142D27]">
+        Usage by equipment
+      </h3>
+      <p className="mt-1 text-sm text-[#64748B]">
+        Estimated weekly consumption from your inventory
+      </p>
+
+      {items.length === 0 ? (
+        <p className="mt-6 text-sm text-slate-500">
+          No saved equipment is available yet.
+        </p>
+      ) : (
+        <div className="mt-6 space-y-5">
+          {items.map((item) => {
+            const energy = Number(item.weekly_energy_kwh) || 0
+            const percentage =
+              maxEnergy > 0 ? (energy / maxEnergy) * 100 : 0
+
+            return (
+              <div key={item.appliance_id}>
+                <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                  <span className="font-medium text-[#142D27]">
+                    {item.name}
+                  </span>
+                  <span className="shrink-0 text-[#64748B]">
+                    {energy.toLocaleString('en-IN', {
+                      maximumFractionDigits: 2,
+                    })} kWh
+                  </span>
+                </div>
+
+                <div className="h-2.5 overflow-hidden rounded-full bg-[#EEF1ED]">
+                  <div
+                    className="h-full rounded-full bg-[#2E8B68]"
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <p className="mt-6 border-t border-[#E2E8E0] pt-4 text-xs leading-5 text-[#64748B]">
+        Estimates use the saved equipment inventory and configured
+        operating schedules.
+      </p>
+    </section>
+  )
+}
+
+
+
 function Overview({ setActivePage }) {
+  const [summary, setSummary] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [apiError, setApiError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadSummary() {
+      setLoading(true)
+      setApiError('')
+
+      try {
+        const data = await getEnergySummary()
+
+        if (!cancelled) {
+          setSummary(data)
+        }
+      } catch (error) {
+        console.error('Could not load energy summary:', error)
+
+        if (!cancelled) {
+          setApiError(
+            'Could not load live inventory estimates. Check that the backend is running.'
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadSummary()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const metrics = buildMetrics(summary, loading)
+
   return (
     <>
+      {apiError && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+          {apiError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map((metric) => (
           <MetricCard key={metric.title} metric={metric} />
@@ -342,9 +419,22 @@ function Overview({ setActivePage }) {
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-5 xl:grid-cols-2">
-        <EnergyTrendChart />
-        <EquipmentUsageChart />
+        {summary && (
+          <>
+            <EnergyTrendChart summary={summary} />
+            <EquipmentUsageChart summary={summary} />
+          </>
+        )}
+
+        {loading && (
+          <p className="text-sm text-slate-500">
+            Loading energy estimates from your saved equipment…
+          </p>
+        )}
       </div>
+
+      {/* Keep your existing Opportunity detected section here */}
+
 
       <section className="mt-6 overflow-hidden rounded-2xl border border-[#B9F3D2] bg-white">
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
@@ -503,13 +593,13 @@ function AnimatedMetric({ value, prefix = "", suffix = "", decimals = 0 }) {
 export default function App() {
   const [activePage, setActivePage] = useState("Landing");
   const [menuOpen, setMenuOpen] = useState(false)
-  if (activePage === "Landing" || activePage === "Home") { 
-  return (
-    <LandingPage
-      onEnter={() => setActivePage("Overview")}
-    />
-  );
-}
+  if (activePage === "Landing" || activePage === "Home") {
+    return (
+      <LandingPage
+        onEnter={() => setActivePage("Overview")}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F7F8F4] text-[#142D27]">
@@ -587,39 +677,31 @@ export default function App() {
             </span>
           </div>
 
-          
 
 
-
-
-{activePage === 'Home' ? (
-  <LandingPage onEnter={() => setActivePage('Overview')} />
-) : activePage === 'Overview' ? (
-  <Overview setActivePage={setActivePage} />
-) : activePage === 'Equipment' ? (
-  <Equipment />
-) : activePage === 'Digital Twin' ? (
-  <DigitalTwin onSavePassport={() => setActivePage('Action Passports')} />
-) : activePage === 'AI Insights' ? (
-  <AIInsights setActivePage={setActivePage} />
-) : activePage === 'Action Passports' ? (
-  <ActionPassports />
-) : (
-  <PagePlaceholder page={activePage} />
-)}
-
-
-
-
-
+          {activePage === 'Home' ? (
+            <LandingPage onEnter={() => setActivePage('Overview')} />
+          ) : activePage === 'Overview' ? (
+            <Overview setActivePage={setActivePage} />
+          ) : activePage === 'Equipment' ? (
+            <Equipment />
+          ) : activePage === 'Digital Twin' ? (
+            <DigitalTwin onSavePassport={() => setActivePage('Action Passports')} />
+          ) : activePage === 'AI Insights' ? (
+            <AIInsights setActivePage={setActivePage} />
+          ) : activePage === 'Action Passports' ? (
+            <ActionPassports />
+          ) : (
+            <PagePlaceholder page={activePage} />
+          )}
           <footer className="py-8 text-center text-xs leading-5 text-[#64748B]">
             WattProof Twin · Demonstration interface · Sample data only
           </footer>
         </main>
       </div>
-       <AIChatbox />
+      <AIChatbox />
     </div>
   )
-  
- 
+
+
 }

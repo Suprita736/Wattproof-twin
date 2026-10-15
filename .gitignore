@@ -1,39 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Dependencies
-node_modules/
-frontend/node_modules/
-
-# Build output
-dist/
-frontend/dist/
-build/
+# Virtual environments
+.venv/
+venv/
+env/
 
 # Environment variables and secrets
 .env
 .env.*
 !.env.example
 
-# Debug logs
+# Frontend dependencies and builds
+node_modules/
+dist/
+build/
+.vite/
+
+# Logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
-# Operating system files
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Editors and operating systems
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# Editor settings
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea/
 
-# Python cache (for backend/AI components)
-__pycache__/
-*.py[cod]
-.venv/
-venv/
+# Machine learning model weights
+*.pt
+*.pth
+*.onnx
 
-# Temporary files
-*.tmp
-*.log
+# Coverage
+.coverage
+htmlcov/

@@ -1,6 +1,7 @@
 # pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 
+
 class Appliance(BaseModel):
     id: int
     name: str
@@ -10,6 +11,17 @@ class Appliance(BaseModel):
     units: int = Field(gt=0)
     operating_days_per_week: int = Field(gt=0, le=7)
     data_source: str
+
+
+class ApplianceCreate(BaseModel):
+    name: str
+    category: str
+    power_watts: float = Field(gt=0, le=50000)
+    hours_per_day: float = Field(ge=0, le=24)
+    units: int = Field(gt=0, le=100)
+    operating_days_per_week: int = Field(gt=0, le=7)
+    data_source: str = "image_detection"
+
 
 class EquipmentEnergy(BaseModel):
     appliance_id: int
@@ -25,6 +37,7 @@ class EnergySummary(BaseModel):
     estimated_daily_co2_kg: float
     equipment_breakdown: list[EquipmentEnergy]
     data_source: str
+
 
 class SimulationRequest(BaseModel):
     appliance_id: int
@@ -50,6 +63,7 @@ class SimulationResponse(BaseModel):
 
     data_source: str
 
+
 class ActionCreate(BaseModel):
     appliance_id: int
     action_name: str
@@ -74,6 +88,7 @@ class ActionResponse(BaseModel):
 
     status: str
     data_source: str
+
 
 class VerificationRequest(BaseModel):
     observed_energy_kwh: float = Field(ge=0)
