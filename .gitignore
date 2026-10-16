@@ -58,3 +58,5 @@ computer-vision/outputs/
 # Generated CV files
 computer-vision/outputs/
 computer-vision/mobileclip_blt.ts
+.vercel
+.env*
