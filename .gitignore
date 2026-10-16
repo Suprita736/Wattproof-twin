@@ -49,3 +49,12 @@ Thumbs.db
 # Coverage
 .coverage
 htmlcov/
+# ML model files
+*.pt
+*.pth
+*.onnx
+computer-vision/outputs/
+
+# Generated CV files
+computer-vision/outputs/
+computer-vision/mobileclip_blt.ts

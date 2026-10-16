@@ -81,6 +81,12 @@ def _build_verification(passport: PassportDB):
             f"{achieved:.0f}% of the predicted saving was achieved, "
             f"which {outcome}."
         )
+        if achieved > 150:
+            headline += (
+                " This is far more than predicted, so check the reading "
+                "(is it one full operating week, in kWh?) or whether "
+                "something else changed, such as the equipment being off."
+            )
 
     return {
         "evidence": "SIMULATED" if simulated else "MEASURED",

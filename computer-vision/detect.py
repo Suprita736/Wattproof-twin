@@ -1,17 +1,64 @@
-
 from pathlib import Path
-from ultralytics import YOLO
+from ultralytics import YOLO, YOLOWorld
 
 # Project paths
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Load the model once when this module is imported
-MODEL = YOLO("yolo11n.pt")
+# Things we want to find (open-vocabulary models match photos to these words).
+CLASSES = [
+    "ceiling fan",
+    "ceiling light",
+    "LED panel light",
+    "tube light",
+    "projector",
+    "air conditioner",
+    "television",
+    "laptop",
+    "refrigerator",
+    "microwave oven",
+]
+
+# Lights are small and low-contrast, so accept weaker matches for them.
+CLASS_CONFIDENCE = {
+    "ceiling light": 0.05,
+    "led panel light": 0.05,
+    "tube light": 0.05,
+}
 
 
-def detect_objects(image_path, confidence_threshold=0.25):
+def _load_model():
+    """Try the best available detector; never crash the server."""
+    # 1) YOLO-World (needs the CLIP text model download)
+    try:
+        model = YOLOWorld("yolov8s-worldv2.pt")
+        model.set_classes(CLASSES)
+        print("[detect] Loaded YOLO-World")
+        return model
+    except Exception as exc:
+        print(f"[detect] YOLO-World unavailable: {exc}")
+
+    # 2) YOLOE (text encoder downloads from GitHub instead)
+    try:
+        from ultralytics import YOLOE
+        model = YOLOE("yoloe-11s-seg.pt")
+        model.set_classes(CLASSES, model.get_text_pe(CLASSES))
+        print("[detect] Loaded YOLOE")
+        return model
+    except Exception as exc:
+        print(f"[detect] YOLOE unavailable: {exc}")
+
+    # 3) Basic model: cannot see fans/lights/projectors, but the app still works
+    print("[detect] Falling back to yolo11n (basic objects only)")
+    return YOLO("yolo11n.pt")
+
+
+# Load once when this module is imported
+MODEL = _load_model()
+
+
+def detect_objects(image_path, confidence_threshold=0.15):
     """
     Detect objects in an image.
 
@@ -29,10 +76,15 @@ def detect_objects(image_path, confidence_threshold=0.25):
     if not image_path.is_file():
         raise ValueError("The supplied path is not a file.")
 
-    # Run YOLO inference
+    # Run inference at the lowest threshold we might accept,
+    # then apply per-class thresholds below.
+    lowest = min([confidence_threshold, *CLASS_CONFIDENCE.values()])
+
     results = MODEL.predict(
         source=str(image_path),
-        conf=confidence_threshold,
+        conf=lowest,
+        imgsz=1280,            # higher resolution helps small ceiling lights
+        agnostic_nms=True,     # same object under two names counts once
         verbose=False
     )
 
@@ -44,10 +96,18 @@ def detect_objects(image_path, confidence_threshold=0.25):
         for box in result.boxes:
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
+            label = result.names[class_id]
+
+            required = CLASS_CONFIDENCE.get(
+                label.lower(), confidence_threshold
+            )
+            if confidence < required:
+                continue
+
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
             detections.append({
-                "label": result.names[class_id],
+                "label": label,
                 "confidence": round(confidence, 4),
                 "bbox": {
                     "x1": round(x1, 2),
@@ -57,7 +117,7 @@ def detect_objects(image_path, confidence_threshold=0.25):
                 }
             })
 
-    # Save image with bounding boxes
+    # Save image with bounding boxes (shows all candidates, handy for debugging)
     output_path = OUTPUT_DIR / f"{image_path.stem}_detected.jpg"
     result.save(filename=str(output_path))
 
