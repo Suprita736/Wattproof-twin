@@ -11,8 +11,8 @@ import {
   Sparkles,
   Zap,
 } from 'lucide-react'
+import { createPassport, getEquipment } from '../api'
 import {
-  EQUIPMENT_PROFILES,
   ENERGY_ASSUMPTIONS,
   calculateEnergyKWh,
   calculateSavings as calculateSharedSavings,
@@ -28,21 +28,28 @@ import {
   YAxis,
 } from 'recharts'
 
-const equipmentOptions = Object.fromEntries(
-  EQUIPMENT_PROFILES.map((profile) => [profile.name, profile]),
-)
-
-const firstProfile = EQUIPMENT_PROFILES[0]
-
 const initialForm = {
-  equipment: firstProfile.name,
-  power: String(firstProfile.ratedPowerW),
-  units: String(firstProfile.units),
-  baselineHours: String(firstProfile.hoursPerDay),
-  proposedHours: String(Math.max(0, firstProfile.hoursPerDay - 1)),
-  days: String(firstProfile.operatingDaysPerWeek),
+  applianceId: '',
+  equipment: '',
+  power: '0',
+  units: '1',
+  baselineHours: '0',
+  proposedHours: '0',
+  days: '5',
   tariff: String(ENERGY_ASSUMPTIONS.tariffINRPerKWh),
   emissionsFactor: String(ENERGY_ASSUMPTIONS.emissionsFactorKgPerKWh),
+}
+
+function formValuesFromAppliance(item) {
+  return {
+    applianceId: String(item.id),
+    equipment: item.name,
+    power: String(item.power_watts),
+    units: String(item.units),
+    baselineHours: String(item.hours_per_day),
+    proposedHours: String(Math.max(0, item.hours_per_day - 1)),
+    days: String(item.operating_days_per_week),
+  }
 }
 
 const inputClass =
@@ -164,11 +171,10 @@ function InteractiveBuilding({ equipment, baselineEnergy, proposedEnergy }) {
                     whileHover={{ x: 5 }}
                     whileTap={{ scale: 0.98 }}
                     aria-pressed={active}
-                    className={`relative flex min-h-[72px] w-full items-center justify-between overflow-hidden rounded-lg border px-4 text-left transition-colors ${
-                      active
-                        ? "border-[#B9F3D2] bg-[#2E8B68] text-white shadow-[0_0_22px_rgba(185,243,210,0.2)]"
-                        : "border-white/15 bg-white/10 text-white hover:bg-white/15"
-                    }`}
+                    className={`relative flex min-h-[72px] w-full items-center justify-between overflow-hidden rounded-lg border px-4 text-left transition-colors ${active
+                      ? "border-[#B9F3D2] bg-[#2E8B68] text-white shadow-[0_0_22px_rgba(185,243,210,0.2)]"
+                      : "border-white/15 bg-white/10 text-white hover:bg-white/15"
+                      }`}
                   >
                     <div>
                       <p className="text-[10px] uppercase tracking-widest opacity-70">
@@ -190,9 +196,8 @@ function InteractiveBuilding({ equipment, baselineEnergy, proposedEnergy }) {
                             duration: 2,
                             repeat: active ? Infinity : 0,
                           }}
-                          className={`h-7 w-4 rounded-sm ${
-                            active ? "bg-[#B9F3D2]" : "bg-[#B9F3D2]/50"
-                          }`}
+                          className={`h-7 w-4 rounded-sm ${active ? "bg-[#B9F3D2]" : "bg-[#B9F3D2]/50"
+                            }`}
                         />
                       ))}
                     </div>
@@ -300,7 +305,7 @@ function AnimatedBeforeAfter({ results }) {
   const proposedWidth = (results.proposedEnergy / maximum) * 100;
   const reduction = results.baselineEnergy > 0
     ? ((results.baselineEnergy - results.proposedEnergy) /
-        results.baselineEnergy) * 100
+      results.baselineEnergy) * 100
     : null;
 
   return (
@@ -493,39 +498,99 @@ export default function DigitalTwin({ onSavePassport }) {
   const [results, setResults] = useState(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [equipmentList, setEquipmentList] = useState([])
+  const [saving, setSaving] = useState(false)
   const visualScenario = calculateScenario(form);
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('wattproof-selected-simulation')
+    let cancelled = false
 
-      if (!saved) return
+    async function loadEquipment() {
+      try {
+        const items = await getEquipment()
+        if (cancelled) return
 
-      const selected = JSON.parse(saved)
+        setEquipmentList(items)
 
-      setForm((current) => ({
-        ...current,
-        equipment: equipmentOptions[selected.equipment]
-          ? selected.equipment
-          : current.equipment,
-        power: String(selected.ratedPower ?? current.power),
-        units: String(selected.units ?? current.units),
-        baselineHours: String(selected.baselineHours ?? current.baselineHours),
-        proposedHours: String(selected.proposedHours ?? current.proposedHours),
-        days: String(selected.operatingDays ?? current.days),
-        tariff: String(selected.tariff ?? current.tariff),
-        emissionsFactor: String(
-          selected.emissionsFactor ?? current.emissionsFactor
-        ),
-      }))
+        if (items.length === 0) {
+          setError(
+            'No saved equipment yet. Add equipment on the Equipment page first.',
+          )
+          return
+        }
 
-      setResults(null)
-      setError('')
-      setNotice('Recommendation loaded. Run the simulation to calculate its impact.')
+        let selected = null
+        try {
+          selected = JSON.parse(
+            localStorage.getItem('wattproof-selected-simulation') || 'null',
+          )
+        } catch {
+          selected = null
+        }
 
-      localStorage.removeItem('wattproof-selected-simulation')
-    } catch (error) {
-      console.error('Could not load selected recommendation:', error)
-      setError('Could not load the selected recommendation.')
+        const match = selected
+          ? items.find((item) => item.id === selected.applianceId) ||
+          items.find(
+            (item) =>
+              item.name.toLowerCase() ===
+              String(selected.equipment).toLowerCase(),
+          )
+          : null
+
+        if (selected && match) {
+          setForm((current) => ({
+            ...current,
+            ...formValuesFromAppliance(match),
+            power: String(selected.ratedPower ?? match.power_watts),
+            units: String(selected.units ?? match.units),
+            baselineHours: String(
+              selected.baselineHours ?? match.hours_per_day,
+            ),
+            proposedHours: String(
+              selected.proposedHours ??
+              Math.max(0, match.hours_per_day - 1),
+            ),
+            days: String(
+              selected.operatingDays ?? match.operating_days_per_week,
+            ),
+            tariff: String(selected.tariff ?? current.tariff),
+            emissionsFactor: String(
+              selected.emissionsFactor ?? current.emissionsFactor,
+            ),
+          }))
+          setResults(null)
+          setNotice(
+            'Recommendation loaded. Run the simulation to calculate its impact.',
+          )
+        } else {
+          setForm((current) => ({
+            ...current,
+            ...formValuesFromAppliance(items[0]),
+          }))
+
+          if (selected) {
+            setError(
+              `"${selected.equipment}" from the recommendation is not in your saved equipment. Add it on the Equipment page first.`,
+            )
+          }
+        }
+
+        if (selected) {
+          localStorage.removeItem('wattproof-selected-simulation')
+        }
+      } catch (err) {
+        console.error('Could not load saved equipment:', err)
+        if (!cancelled) {
+          setError(
+            'Could not load saved equipment. Check that the backend is running.',
+          )
+        }
+      }
+    }
+
+    loadEquipment()
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -534,16 +599,13 @@ export default function DigitalTwin({ onSavePassport }) {
     const { name, value } = event.target
 
     if (name === 'equipment') {
-      const profile = equipmentOptions[value]
+      const item = equipmentList.find((entry) => String(entry.id) === value)
+
+      if (!item) return
 
       setForm((current) => ({
         ...current,
-        equipment: value,
-        power: String(profile.ratedPowerW),
-        units: String(profile.units),
-        baselineHours: String(profile.hoursPerDay),
-        proposedHours: String(Math.max(0, profile.hoursPerDay - 1)),
-        days: String(profile.operatingDaysPerWeek),
+        ...formValuesFromAppliance(item),
       }))
     } else {
       setForm((current) => ({ ...current, [name]: value }))
@@ -635,61 +697,78 @@ export default function DigitalTwin({ onSavePassport }) {
   }
 
   function resetForm() {
-    setForm(initialForm)
+    setForm({
+      ...initialForm,
+      ...(equipmentList[0] ? formValuesFromAppliance(equipmentList[0]) : {}),
+    })
     setResults(null)
     setError('')
     setNotice('')
   }
 
-  function savePassport() {
+  async function savePassport() {
     if (!results) {
       setError('Run a simulation before saving an Action Passport.')
       return
     }
 
-    const passport = {
-      id: `AP-${Date.now()}`,
-      equipment: form.equipment,
-      action: `Change operating time from ${form.baselineHours} to ${form.proposedHours} hours per day`,
-      status: 'Draft',
-      createdAt: new Date().toISOString(),
-      assumptions: {
-        powerW: Number(form.power),
-        units: Number(form.units),
-        baselineHours: Number(form.baselineHours),
-        proposedHours: Number(form.proposedHours),
-        daysPerWeek: Number(form.days),
-        tariffINRPerKWh: Number(form.tariff),
-        emissionsFactorKgPerKWh: Number(form.emissionsFactor),
-      },
-      prediction: results,
-      dataMode: 'SIMULATED',
+    if (!(results.energySaved > 0)) {
+      setError(
+        'This scenario does not reduce energy use, so there is nothing to verify. Lower the proposed hours and run the simulation again.',
+      )
+      return
     }
 
+    const selectedEquipment = equipmentList.find(
+      (item) => String(item.id) === form.applianceId,
+    )
+
+    setSaving(true)
+
     try {
-      const existing = JSON.parse(
-        localStorage.getItem('wattproof-action-passports') || '[]',
-      )
-
-      if (!Array.isArray(existing)) {
-        throw new Error('Invalid saved passport data.')
-      }
-
-      localStorage.setItem(
-        'wattproof-action-passports',
-        JSON.stringify([passport, ...existing]),
-      )
+      await createPassport({
+        applianceId: selectedEquipment ? selectedEquipment.id : null,
+        equipment: form.equipment,
+        action: `Change operating time from ${form.baselineHours} to ${form.proposedHours} hours per day`,
+        equipmentSource: selectedEquipment?.data_source || 'unknown',
+        assumptions: {
+          powerW: Number(form.power),
+          units: Number(form.units),
+          baselineHours: Number(form.baselineHours),
+          proposedHours: Number(form.proposedHours),
+          daysPerWeek: Number(form.days),
+          tariffINRPerKWh: Number(form.tariff),
+          emissionsFactorKgPerKWh: Number(form.emissionsFactor),
+        },
+        prediction: {
+          baselineEnergy: results.baselineEnergy,
+          proposedEnergy: results.proposedEnergy,
+          energySaved: results.energySaved,
+          baselineCost: results.baselineCost,
+          proposedCost: results.proposedCost,
+          costSaved: results.costSaved,
+          baselineEmissions: results.baselineEmissions,
+          proposedEmissions: results.proposedEmissions,
+          emissionsSaved: results.emissionsSaved,
+          reduction: results.reduction,
+        },
+      })
 
       setError('')
-      setNotice('Action Passport draft saved on this browser.')
+      setNotice('Action Passport saved.')
 
       if (onSavePassport) {
         onSavePassport()
       }
-    } catch {
+    } catch (err) {
+      console.error('Could not save passport:', err)
       setError(
-        'Could not save the draft in this browser. Check browser storage settings and try again.',
+        err.message === 'Failed to fetch'
+          ? 'Could not reach the backend. Check that it is running and try again.'
+          : `Could not save the passport: ${err.message}`,
       )
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -726,10 +805,10 @@ export default function DigitalTwin({ onSavePassport }) {
         </div>
       )}
       <InteractiveBuilding
-  equipment={form.equipment}
-  baselineEnergy={visualScenario.baselineEnergy}
-  proposedEnergy={visualScenario.proposedEnergy}
-/>
+        equipment={form.equipment}
+        baselineEnergy={visualScenario.baselineEnergy}
+        proposedEnergy={visualScenario.proposedEnergy}
+      />
 
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 sm:p-6">
@@ -758,13 +837,14 @@ export default function DigitalTwin({ onSavePassport }) {
               <select
                 id="equipment"
                 name="equipment"
-                value={form.equipment}
+                value={form.applianceId}
                 onChange={updateField}
                 className={inputClass}
+                disabled={equipmentList.length === 0}
               >
-                {Object.keys(equipmentOptions).map((name) => (
-                  <option key={name} value={name}>
-                    {name}
+                {equipmentList.map((item) => (
+                  <option key={item.id} value={String(item.id)}>
+                    {item.name}
                   </option>
                 ))}
               </select>
@@ -1080,7 +1160,7 @@ export default function DigitalTwin({ onSavePassport }) {
 
               <AnimatedBeforeAfter results={results} />
 
-<ComparisonChart results={results} />
+              <ComparisonChart results={results} />
 
               <section className="rounded-2xl border border-[#E2E8E0] bg-white p-5 sm:p-6">
                 <h3 className="font-semibold text-[#142D27]">
@@ -1126,10 +1206,11 @@ export default function DigitalTwin({ onSavePassport }) {
 
                 <button
                   onClick={savePassport}
-                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#142D27] px-4 py-3 text-sm font-semibold text-white hover:bg-[#21483C]"
+                  disabled={saving}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#142D27] px-4 py-3 text-sm font-semibold text-white hover:bg-[#21483C] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <FileCheck2 size={18} />
-                  Save as Action Passport
+                  {saving ? 'Saving…' : 'Save as Action Passport'}
                 </button>
               </section>
             </>

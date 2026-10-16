@@ -363,42 +363,19 @@ function PhotoDetection({ onClose, onAddDetection }) {
     try {
       const result = await detectEquipment(file)
 
-      const allowedEquipment = [
-        'air conditioner',
-        'ac',
-        'fan',
-        'light',
-        'lamp',
-        'computer',
-        'laptop',
-        'tv',
-        'television',
-        'refrigerator',
-        'microwave',
-        'monitor',
-        'printer',
-      ]
-
+      // Only keep detections the CV service could map to a known appliance
+      // type. Raw labels such as "backpack" or "traffic light" are ignored.
       const found = (Array.isArray(result?.detections) ? result.detections : [])
-        .filter((item) => {
-          const name = String(
-            item.appliance_type || item.label || item.class_name || ''
-          ).toLowerCase()
-
-          return allowedEquipment.some((equipment) =>
-            name.includes(equipment)
-          )
-        })
+        .filter((item) => Boolean(item.appliance_type))
 
       setDetections(found)
 
       if (found.length === 0) {
-        setError('No supported electrical equipment detected. Try a clearer photo.')
-      }
-
-      setDetections(found)
-      if (found.length === 0) {
-        setError(result?.message || 'No equipment was detected. Try another image.')
+        setError(
+          result?.detection_count > 0
+            ? 'Objects were detected, but none are supported electrical equipment. Try a clearer photo, or add the equipment manually.'
+            : result?.message || 'No equipment was detected. Try another image.',
+        )
       }
     } catch (err) {
       setError(

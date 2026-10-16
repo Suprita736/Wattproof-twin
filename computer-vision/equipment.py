@@ -13,6 +13,7 @@ VALID_APPLIANCES = {
     "refrigerator",
     "air_conditioner",
     "light",
+    "microwave",
 }
 
 class EquipmentConfirmation(BaseModel):

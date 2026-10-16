@@ -87,5 +87,5 @@ def verify_action(
             2
         ),
         "status": status,
-        "data_source": "simulated"
+        "data_source": "measured_reading"
     }

@@ -5,6 +5,8 @@
 YOLO_TO_APPLIANCE = {
     "tv": "television",
     "laptop": "laptop",
+    "refrigerator": "refrigerator",
+    "microwave": "microwave",
 }
 
 DEFAULT_POWER_WATTS = {
@@ -14,6 +16,7 @@ DEFAULT_POWER_WATTS = {
     "refrigerator": 150,
     "air_conditioner": 1500,
     "light": 12,
+    "microwave": 1100,
 }
 
 def map_detection(label: str):

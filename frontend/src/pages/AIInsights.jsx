@@ -1,8 +1,5 @@
-import {
-  RECOMMENDATIONS,
-  calculateSavings as calculateSharedSavings,
-} from "../data/mockData";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { getDiagnosis, saveOccupancy } from "../api";
 import {
   BrainCircuit,
   Zap,
@@ -14,143 +11,138 @@ import {
   Lightbulb,
 } from "lucide-react";
 
-
-
-
-
-function calculateSavings(item) {
-  const savings = calculateSharedSavings({
-    ratedPowerW: item.ratedPowerW,
-    units: item.units,
-    baselineHours: item.baselineHours,
-    proposedHours: item.proposedHours,
-    operatingDaysPerWeek: item.operatingDaysPerWeek,
-    tariffINRPerKWh: item.tariffINRPerKWh,
-    emissionsFactorKgPerKWh: item.emissionsFactorKgPerKWh,
-  });
-
-  return {
-    energy: savings.energySavedKWh,
-    cost: savings.costSavedINR,
-    emissions: savings.emissionsSavedKgCO2e,
-  };
+function sourceLabel(value) {
+  if (value === "image_detection") return "Detected from photo";
+  if (value === "simulated") return "Sample data";
+  return "Entered by user";
 }
 
-
+function num(value) {
+  return Number(Number(value).toFixed(2));
+}
 
 export default function AIInsights({ setActivePage }) {
+  const [diagnosis, setDiagnosis] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [hoursInput, setHoursInput] = useState("");
+  const [daysInput, setDaysInput] = useState("");
+  const [savingOccupancy, setSavingOccupancy] = useState(false);
+  const [occupancyError, setOccupancyError] = useState("");
   const [selected, setSelected] = useState(null);
-  const [savedRecommendations, setSavedRecommendations] = useState(() => {
-  try {
-    return JSON.parse(
-      localStorage.getItem("wattproof-saved-recommendations") || "[]"
-    );
-  } catch {
-    return [];
-  }
-});
 
-  function openSimulator(item) {
+  const loadDiagnosis = useCallback(async () => {
+    try {
+      const data = await getDiagnosis();
+      setDiagnosis(data);
+      setError("");
+      return data;
+    } catch (err) {
+      console.error("Could not load diagnosis:", err);
+      setError(
+        "Could not load the diagnosis. Check that the backend is running."
+      );
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      const data = await loadDiagnosis();
+
+      if (!cancelled && data) {
+        setHoursInput(String(data.occupancy.occupiedHoursPerDay));
+        setDaysInput(String(data.occupancy.occupiedDaysPerWeek));
+      }
+    }
+
+    init();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadDiagnosis]);
+
+  async function updateOccupancy(event) {
+    event.preventDefault();
+
+    const hours = Number(hoursInput);
+    const days = Number(daysInput);
+
+    if (
+      hoursInput === "" ||
+      !Number.isFinite(hours) ||
+      hours < 0 ||
+      hours > 24
+    ) {
+      setOccupancyError("Occupied hours per day must be between 0 and 24.");
+      return;
+    }
+
+    if (
+      daysInput === "" ||
+      !Number.isInteger(days) ||
+      days < 1 ||
+      days > 7
+    ) {
+      setOccupancyError(
+        "Occupied days per week must be a whole number from 1 to 7."
+      );
+      return;
+    }
+
+    setSavingOccupancy(true);
+
+    try {
+      await saveOccupancy({
+        occupiedHoursPerDay: hours,
+        occupiedDaysPerWeek: days,
+      });
+      await loadDiagnosis();
+      setOccupancyError("");
+    } catch (err) {
+      console.error("Could not save occupancy:", err);
+      setOccupancyError(
+        err.message === "Failed to fetch"
+          ? "Could not reach the backend. Check that it is running."
+          : err.message
+      );
+    } finally {
+      setSavingOccupancy(false);
+    }
+  }
+
+  function openSimulator(finding) {
     try {
       localStorage.setItem(
         "wattproof-selected-simulation",
         JSON.stringify({
-          equipment: item.equipment,
-          ratedPower: item.ratedPowerW,
-          units: item.units,
-          baselineHours: item.baselineHours,
-          proposedHours: item.proposedHours,
-          operatingDays: item.operatingDaysPerWeek,
-          tariff: item.tariffINRPerKWh,
-          emissionsFactor: item.emissionsFactorKgPerKWh,
+          applianceId: finding.applianceId,
+          equipment: finding.name,
+          ratedPower: finding.powerWatts,
+          units: finding.units,
+          baselineHours: finding.currentHoursPerDay,
+          proposedHours: finding.suggestedHoursPerDay,
+          operatingDays: finding.daysPerWeek,
         })
       );
-    } catch (error) {
-      console.error("Could not save simulation inputs:", error);
+    } catch (err) {
+      console.error("Could not save simulation inputs:", err);
     }
 
     if (setActivePage) {
       setActivePage("Digital Twin");
-    } else {
-      alert(
-        "Recommendation selected. Open Digital Twin to configure the simulation."
-      );
     }
   }
 
-function createActionPassport(item) {
-  const savings = calculateSavings(item);
-
-  const newPassport = {
-    id: `AP-${Date.now()}`,
-    equipment: item.equipment,
-    action: item.action,
-    status: "Draft",
-    createdAt: new Date().toISOString(),
-    dataMode: "SIMULATED",
-
-    assumptions: {
-      ratedPower: item.ratedPowerW,
-      units: item.units,
-      baselineHours: item.baselineHours,
-      proposedHours: item.proposedHours,
-      operatingDays: item.operatingDaysPerWeek,
-      tariff: item.tariffINRPerKWh,
-      emissionsFactor: item.emissionsFactor,
-    },
-
-    prediction: {
-      energySaved: savings.energy,
-      costSaved: savings.cost,
-      emissionsSaved: savings.emissions,
-    },
-  };
-
-  try {
-    const existing = JSON.parse(
-      localStorage.getItem("wattproof-action-passports") || "[]"
-    );
-
-    if (!Array.isArray(existing)) {
-      throw new Error("Invalid Action Passports data");
-    }
-
-    localStorage.setItem(
-      "wattproof-action-passports",
-      JSON.stringify([...existing, newPassport])
-    );
-
-    if (setActivePage) {
-      setActivePage("Action Passports");
-    } else {
-      alert("Action Passport created successfully!");
-    }
-  } catch (error) {
-    console.error("Could not create Action Passport:", error);
-    alert("Could not create the Action Passport. Please try again.");
-  }
-}
-
-  
-function saveRecommendation(item) {
-  const exists = savedRecommendations.includes(item.id);
-
-  const updated = exists
-    ? savedRecommendations.filter((id) => id !== item.id)
-    : [...savedRecommendations, item.id];
-
-  setSavedRecommendations(updated);
-
-  try {
-    localStorage.setItem(
-      "wattproof-saved-recommendations",
-      JSON.stringify(updated)
-    );
-  } catch (error) {
-    console.error("Could not save recommendation:", error);
-  }
-}
-
+  const findings = diagnosis?.findings ?? [];
+  const flagged = findings.filter((f) => f.status === "possible_waste");
+  const others = findings.filter((f) => f.status !== "possible_waste");
+  const totalCost = flagged.reduce((sum, f) => sum + f.wasteCost, 0);
 
   return (
     <div className="space-y-6">
@@ -160,13 +152,12 @@ function saveRecommendation(item) {
         </p>
 
         <h1 className="text-3xl font-bold text-[#142D27]">
-          AI Energy Insights
+          Energy Diagnosis
         </h1>
 
         <p className="mt-2 max-w-3xl text-slate-500">
-          Explore explainable energy-saving recommendations, understand
-          the reasoning behind each suggestion, and test potential
-          improvements in the Digital Twin.
+          Find equipment that may be running while the room is unoccupied,
+          see why it was flagged, and test the fix in the Digital Twin.
         </p>
       </div>
 
@@ -176,304 +167,323 @@ function saveRecommendation(item) {
 
           <div>
             <h2 className="font-semibold text-[#142D27]">
-              Energy Recommendation Engine
+              How this diagnosis works
             </h2>
 
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              These recommendations use predefined demonstration scenarios
-              and transparent calculations. They are not generated by a
-              connected AI model and are not based on live sensor readings.
+              Each finding compares the operating hours of your saved
+              equipment with the occupancy schedule below. The calculation
+              is transparent and is not generated by a connected AI model.
+              It is not based on live sensor readings, so every figure is an
+              estimate.
             </p>
 
             <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#2E8B68]">
-              DEMO DATA · EXPLAINABLE CALCULATIONS
+              ESTIMATED · SAVED EQUIPMENT + ASSUMED OCCUPANCY
             </span>
           </div>
         </div>
       </div>
-    
-{/* SAVED RECOMMENDATIONS */}
-<section className="space-y-4">
-  <div>
-    <h2 className="text-xl font-bold text-[#142D27]">
-      Saved Recommendations
-    </h2>
-    <p className="mt-1 text-sm text-slate-500">
-      Your bookmarked energy-saving ideas, available whenever you return.
-    </p>
-  </div>
 
-  {savedRecommendations.length === 0 ? (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-      <p className="font-semibold text-[#142D27]">
-        No saved recommendations yet
-      </p>
-      <p className="mt-2 text-sm text-slate-500">
-        Click Save idea on any recommendation above to add it here.
-      </p>
-    </div>
-  ) : (
-    <div className="grid gap-4 xl:grid-cols-2">
-      {RECOMMENDATIONS
-        .filter((item) => savedRecommendations.includes(item.id))
-        .map((item) => {
-          const savings = calculateSavings(item);
+      <form
+        onSubmit={updateOccupancy}
+        className="rounded-2xl border border-slate-200 bg-white p-5"
+      >
+        <h2 className="font-semibold text-[#142D27]">Occupancy schedule</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          When is the room normally in use? Equipment running outside this
+          schedule is counted as possible waste.
+        </p>
 
-          return (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-emerald-100 bg-white p-5"
+        <div className="mt-4 grid gap-3 sm:grid-cols-3 sm:items-end">
+          <label className="text-sm text-slate-600">
+            Occupied hours per day
+            <input
+              type="number"
+              min="0"
+              max="24"
+              step="any"
+              value={hoursInput}
+              onChange={(e) => {
+                setHoursInput(e.target.value);
+                setOccupancyError("");
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+              required
+            />
+          </label>
+
+          <label className="text-sm text-slate-600">
+            Occupied days per week
+            <input
+              type="number"
+              min="1"
+              max="7"
+              step="1"
+              value={daysInput}
+              onChange={(e) => {
+                setDaysInput(e.target.value);
+                setOccupancyError("");
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+              required
+            />
+          </label>
+
+          <button
+            type="submit"
+            disabled={savingOccupancy || !diagnosis}
+            className="rounded-xl bg-[#142D27] px-4 py-3 text-sm font-semibold text-white hover:bg-[#24483D] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {savingOccupancy ? "Updating…" : "Update diagnosis"}
+          </button>
+        </div>
+
+        {occupancyError && (
+          <p
+            role="alert"
+            className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
+          >
+            {occupancyError}
+          </p>
+        )}
+      </form>
+
+      {error && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+        >
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+          Running diagnosis…
+        </div>
+      ) : diagnosis && findings.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
+          <p className="font-semibold text-[#142D27]">
+            No equipment to diagnose yet
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            Add equipment first, from a photo or manually, and the diagnosis
+            will appear here.
+          </p>
+          {setActivePage && (
+            <button
+              onClick={() => setActivePage("Equipment")}
+              className="mt-4 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[#2E8B68]">
-                    {item.category || "Energy"}
-                  </span>
-
-                  <h3 className="mt-1 text-lg font-bold text-[#142D27]">
-                    {item.equipment}
-                  </h3>
-                </div>
-
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  <CheckCircle2
-                    size={13}
-                    className="mr-1 inline"
-                  />
-                  Saved
-                </span>
-              </div>
-
-              <p className="mt-3 text-sm leading-6 text-slate-600">
-                {item.action}
+              Go to Equipment
+            </button>
+          )}
+        </div>
+      ) : diagnosis ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <Zap className="mb-3 text-[#2E8B68]" size={23} />
+              <p className="text-sm text-slate-500">Possible waste found</p>
+              <p className="mt-2 text-3xl font-bold text-[#142D27]">
+                {flagged.length}
               </p>
+              <p className="mt-1 text-xs text-slate-400">
+                of {findings.length} saved equipment items
+              </p>
+            </div>
 
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-emerald-50 p-3">
-                  <p className="text-lg font-bold text-[#142D27]">
-                    {savings.energy}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    kWh/week
-                  </p>
-                </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <IndianRupee className="mb-3 text-[#2E8B68]" size={23} />
+              <p className="text-sm text-slate-500">
+                Estimated cost of waste
+              </p>
+              <p className="mt-2 text-3xl font-bold text-[#142D27]">
+                ₹{num(totalCost).toLocaleString("en-IN")}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">per week</p>
+            </div>
 
-                <div className="rounded-lg bg-emerald-50 p-3">
-                  <p className="text-lg font-bold text-[#142D27]">
-                    ₹{savings.cost}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    /week
-                  </p>
-                </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <Leaf className="mb-3 text-[#2E8B68]" size={23} />
+              <p className="text-sm text-slate-500">
+                Estimated energy wasted
+              </p>
+              <p className="mt-2 text-3xl font-bold text-[#142D27]">
+                {num(diagnosis.totalWasteEnergyKwh)} kWh
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                {diagnosis.wastePercent}% of{" "}
+                {num(diagnosis.totalWeeklyEnergyKwh)} kWh/week total
+              </p>
+            </div>
+          </div>
 
-                <div className="rounded-lg bg-emerald-50 p-3">
-                  <p className="text-lg font-bold text-[#142D27]">
-                    {Number(savings.emissions.toFixed(2))}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    kg CO₂e/week
-                  </p>
-                </div>
-              </div>
+          <div>
+            <h2 className="text-xl font-bold text-[#142D27]">
+              Possible waste
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Review the evidence before testing an action.
+            </p>
+          </div>
 
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button
-                  onClick={() => openSimulator(item)}
-                  className="flex-1 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
+          {flagged.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
+              <CheckCircle2
+                className="mx-auto mb-2 text-[#2E8B68]"
+                size={28}
+              />
+              <p className="font-semibold text-[#142D27]">
+                No possible waste found for this schedule
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                All saved equipment runs within the occupied hours. Try a
+                shorter occupancy schedule, or add more equipment.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-2">
+              {flagged.map((f) => (
+                <div
+                  key={f.applianceId}
+                  className="rounded-2xl border border-slate-200 bg-white p-5"
                 >
-                  Test in Digital Twin →
-                </button>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {f.category || "Energy"} · {sourceLabel(f.dataSource)}
+                      </p>
+                      <h3 className="mt-1 text-xl font-bold text-[#142D27]">
+                        {f.name}
+                      </h3>
+                    </div>
 
-                <button
-                  onClick={() => saveRecommendation(item)}
-                  className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  Remove saved idea
-                </button>
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                      ESTIMATED
+                    </span>
+                  </div>
+
+                  <div className="mt-4 flex items-start gap-3 rounded-xl bg-[#F7F8F4] p-4">
+                    <AlertTriangle
+                      size={19}
+                      className="mt-0.5 shrink-0 text-amber-600"
+                    />
+                    <p className="text-sm leading-6 text-slate-600">
+                      {f.explanation}
+                    </p>
+                  </div>
+
+                  <p className="mt-4 text-sm text-slate-600">
+                    Suggested change:{" "}
+                    <span className="font-semibold text-[#142D27]">
+                      {f.currentHoursPerDay} h/day → {f.suggestedHoursPerDay}{" "}
+                      h/day
+                    </span>
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <Zap size={17} className="text-[#2E8B68]" />
+                      <p className="mt-2 text-lg font-bold text-[#142D27]">
+                        {f.wasteEnergyKwh}
+                      </p>
+                      <p className="text-xs text-slate-500">kWh/week</p>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <IndianRupee size={17} className="text-[#2E8B68]" />
+                      <p className="mt-2 text-lg font-bold text-[#142D27]">
+                        ₹{f.wasteCost}
+                      </p>
+                      <p className="text-xs text-slate-500">/week</p>
+                    </div>
+
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <Leaf size={17} className="text-[#2E8B68]" />
+                      <p className="mt-2 text-lg font-bold text-[#142D27]">
+                        {f.wasteCo2Kg}
+                      </p>
+                      <p className="text-xs text-slate-500">kg CO₂e/week</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelected(f)}
+                    className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-[#142D27] hover:bg-slate-50"
+                  >
+                    View reasoning
+                  </button>
+
+                  <button
+                    onClick={() => openSimulator(f)}
+                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
+                  >
+                    Simulate this fix
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {others.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5">
+              <h2 className="font-semibold text-[#142D27]">
+                No waste flagged
+              </h2>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[520px] text-left text-sm">
+                  <thead className="text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="py-2 pr-3">Equipment</th>
+                      <th className="py-2 pr-3">Source</th>
+                      <th className="py-2 pr-3">Hours/day</th>
+                      <th className="py-2 pr-3">kWh/week</th>
+                      <th className="py-2">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {others.map((f) => (
+                      <tr key={f.applianceId}>
+                        <td className="py-2 pr-3 font-medium text-[#142D27]">
+                          {f.name}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {sourceLabel(f.dataSource)}
+                        </td>
+                        <td className="py-2 pr-3">{f.currentHoursPerDay}</td>
+                        <td className="py-2 pr-3">{f.weeklyEnergyKwh}</td>
+                        <td className="py-2 text-slate-500">
+                          {f.status === "always_on"
+                            ? "Runs continuously by design"
+                            : "Within occupied schedule"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
-          );
-        })}
-    </div>
-  )}
-</section>
+          )}
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <Zap className="mb-3 text-[#2E8B68]" size={23} />
-          <p className="text-sm text-slate-500">Opportunities identified</p>
-          <p className="mt-2 text-3xl font-bold text-[#142D27]">
-            {RECOMMENDATIONS.length}
+          <p className="text-xs leading-5 text-slate-400">
+            {diagnosis.note}
           </p>
-        </div>
+        </>
+      ) : null}
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <IndianRupee className="mb-3 text-[#2E8B68]" size={23} />
-          <p className="text-sm text-slate-500">Potential weekly savings</p>
-          <p className="mt-2 text-3xl font-bold text-[#142D27]">
-            ₹
-            {RECOMMENDATIONS
-              .reduce((sum, item) => sum + calculateSavings(item).cost, 0)
-              .toLocaleString("en-IN")}
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <Leaf className="mb-3 text-[#2E8B68]" size={23} />
-          <p className="text-sm text-slate-500">Potential weekly energy savings</p>
-          <p className="mt-2 text-3xl font-bold text-[#142D27]">
-            {RECOMMENDATIONS.reduce(
-              (sum, item) => sum + calculateSavings(item).energy,
-              0
-            )}{" "}
-            kWh
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-[#142D27]">
-            Recommended actions
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Review the evidence before testing an action.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        {RECOMMENDATIONS.map((item) => {
-          const savings = calculateSavings(item);
-          const isSaved = savedRecommendations.includes(item.id);
-
-          return (
-            <div
-              key={item.id}
-              className="rounded-2xl border border-slate-200 bg-white p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {item.category || "Energy"}
-                  </p>
-                  <h3 className="mt-1 text-xl font-bold text-[#142D27]">
-                    {item.equipment}
-                  </h3>
-                </div>
-
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    item.priority === "High"
-                      ? "bg-rose-100 text-rose-700"
-                      : "bg-amber-100 text-amber-700"
-                  }`}
-                >
-                  {item.priority} priority
-                </span>
-              </div>
-
-              <div className="mt-4 flex items-start gap-3 rounded-xl bg-[#F7F8F4] p-4">
-                <AlertTriangle
-                  size={19}
-                  className="mt-0.5 shrink-0 text-amber-600"
-                />
-                <div>
-                  <p className="font-semibold text-[#142D27]">
-                    {item.issue}
-                  </p>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {item.evidence}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <p className="text-sm font-semibold text-[#142D27]">
-                  Suggested action
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  {item.action}
-                </p>
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-xl bg-emerald-50 p-3">
-                  <Zap size={17} className="text-[#2E8B68]" />
-                  <p className="mt-2 text-lg font-bold text-[#142D27]">
-                    {savings.energy}
-                  </p>
-                  <p className="text-xs text-slate-500">kWh/week</p>
-                </div>
-
-                <div className="rounded-xl bg-emerald-50 p-3">
-                  <IndianRupee size={17} className="text-[#2E8B68]" />
-                  <p className="mt-2 text-lg font-bold text-[#142D27]">
-                    ₹{savings.cost}
-                  </p>
-                  <p className="text-xs text-slate-500">/week</p>
-                </div>
-
-                <div className="rounded-xl bg-emerald-50 p-3">
-                  <Leaf size={17} className="text-[#2E8B68]" />
-                  <p className="mt-2 text-lg font-bold text-[#142D27]">
-                    {savings.emissions}
-                  </p>
-                  <p className="text-xs text-slate-500">kg CO₂e/week</p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelected(item)}
-                className="mt-4 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-[#142D27] hover:bg-slate-50"
-              >
-                View reasoning
-              </button>
-
-             
-<div className="mt-3 flex flex-col gap-2">
-  <button
-    onClick={() => openSimulator(item)}
-    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 text-sm font-semibold text-white hover:bg-[#246D52]"
-  >
-    Test in Digital Twin
-    <ArrowRight size={16} />
-  </button>
-
-  <div className="flex flex-col gap-2 sm:flex-row">
-    <button
-      onClick={() => createActionPassport(item)}
-      className="flex-1 rounded-xl bg-[#142D27] px-4 py-3 text-sm font-semibold text-white hover:bg-[#24483D]"
-    >
-      + Create Action Passport
-    </button>
-
-    <button
-      onClick={() => saveRecommendation(item)}
-      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-[#142D27] hover:bg-slate-50"
-    >
-      <CheckCircle2 size={16} />
-      {isSaved ? "Saved" : "Save idea"}
-    </button>
-  </div>
-</div>
-
-            </div>
-          );
-        })}
-      </div>
-
-      {selected && (
+      {selected && diagnosis && (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
           <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-[#2E8B68]">
-                  EXPLAINABLE RECOMMENDATION
+                  EXPLAINABLE FINDING
                 </p>
                 <h2 className="mt-2 text-2xl font-bold text-[#142D27]">
-                  {selected.equipment}
+                  {selected.name}
                 </h2>
               </div>
 
@@ -491,29 +501,38 @@ function saveRecommendation(item) {
                 <h3 className="font-semibold text-[#142D27]">
                   1. Issue identified
                 </h3>
-                <p>{selected.issue}</p>
+                <p>{selected.explanation}</p>
               </div>
 
               <div>
                 <h3 className="font-semibold text-[#142D27]">
                   2. Evidence used
                 </h3>
-                <p>{selected.evidence}</p>
+                <p className="rounded-lg bg-[#F7F8F4] p-3 text-[#142D27]">
+                  Saved equipment: {selected.powerWatts} W ×{" "}
+                  {selected.units} unit(s), {selected.currentHoursPerDay}{" "}
+                  h/day × {selected.daysPerWeek} days ={" "}
+                  {num(selected.currentHoursPerDay * selected.daysPerWeek)}{" "}
+                  operating h/week.
+                  <br />
+                  Assumed occupancy: {diagnosis.occupancy.occupiedHoursPerDay}{" "}
+                  h/day × {diagnosis.occupancy.occupiedDaysPerWeek} days ={" "}
+                  {num(
+                    diagnosis.occupancy.occupiedHoursPerDay *
+                    diagnosis.occupancy.occupiedDaysPerWeek
+                  )}{" "}
+                  occupied h/week.
+                </p>
               </div>
 
               <div>
                 <h3 className="font-semibold text-[#142D27]">
                   3. Calculation
                 </h3>
-                <p>
-                  Estimated energy savings = rated power × number of units ×
-                  reduced hours per day × operating days per week ÷ 1,000.
-                </p>
-                <p className="mt-2 rounded-lg bg-[#F7F8F4] p-3 font-medium text-[#142D27]">
-                  {selected.ratedPowerW} W × {selected.units} units ×{" "}
-                  {selected.baselineHours - selected.proposedHours} fewer
-                  hour(s)/day × {selected.operatingDaysPerWeek} days ÷ 1,000 ={" "}
-                  {calculateSavings(selected).energy} kWh/week
+                <p className="rounded-lg bg-[#F7F8F4] p-3 font-medium text-[#142D27]">
+                  {selected.powerWatts} W × {selected.units} unit(s) ×{" "}
+                  {selected.unoccupiedHoursPerWeek} unoccupied h/week ÷
+                  1,000 = {selected.wasteEnergyKwh} kWh/week
                 </p>
               </div>
 
@@ -522,11 +541,12 @@ function saveRecommendation(item) {
                   4. Assumptions and limitations
                 </h3>
                 <p>
-                  This estimate assumes constant rated power and the same
-                  operating schedule each week. Actual consumption can differ
-                  due to load variation, occupancy, weather, and equipment
-                  efficiency. The scenario is illustrative, not a measured
-                  fault or a prediction from a trained AI model.
+                  The occupancy schedule is an assumption, not a sensor
+                  reading, and the equipment is assumed to draw its rated
+                  power whenever it runs. Some use outside the schedule may
+                  be legitimate, for example pre-cooling or cleaning. Treat
+                  this as a lead to check, then confirm the result with a
+                  follow-up reading in Action Passports.
                 </p>
               </div>
             </div>
@@ -539,7 +559,7 @@ function saveRecommendation(item) {
               }}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 font-semibold text-white hover:bg-[#246D52]"
             >
-              Test this action
+              Simulate this fix
               <ArrowRight size={17} />
             </button>
           </div>
@@ -554,10 +574,10 @@ function saveRecommendation(item) {
               What happens next?
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Select an action to test its assumptions in the Digital Twin.
-              After reviewing the simulation, save an Action Passport to
-              track its predicted impact and run a clearly labelled simulated
-              follow-up.
+              Choose Simulate this fix to compare the current schedule with
+              the suggested one in the Digital Twin. Save the result as an
+              Action Passport, then record a follow-up reading after the
+              change to see whether the predicted saving was achieved.
             </p>
           </div>
         </div>

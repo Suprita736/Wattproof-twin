@@ -1,4 +1,6 @@
-from seed_data import APPLIANCES
+from sqlalchemy.orm import Session
+
+from database.models import ApplianceDB
 from services.energy_service import (
     TARIFF_PER_KWH,
     GRID_EMISSION_FACTOR,
@@ -7,32 +9,29 @@ from services.energy_service import (
 
 
 def simulate_appliance(
+    db: Session,
     appliance_id: int,
-    reduction_percent: float
+    reduction_percent: float,
 ):
-    appliance = None
-
-    for item in APPLIANCES:
-        if item.id == appliance_id:
-            appliance = item
-            break
+    appliance = (
+        db.query(ApplianceDB)
+        .filter(ApplianceDB.id == appliance_id)
+        .first()
+    )
 
     if appliance is None:
         return None
 
-    # Baseline energy consumption
+    # Baseline energy consumption (kWh per operating day)
     baseline_energy = calculate_daily_energy(
         appliance.power_watts,
         appliance.hours_per_day,
-        appliance.units
+        appliance.units,
     )
 
     # Apply proposed reduction
     reduction_factor = 1 - (reduction_percent / 100)
-
     proposed_energy = baseline_energy * reduction_factor
-
-    # Energy savings
     energy_saved = baseline_energy - proposed_energy
 
     # Cost calculations
@@ -62,5 +61,5 @@ def simulate_appliance(
         "proposed_co2_kg": round(proposed_co2, 2),
         "co2_saved_kg": round(co2_saved, 2),
 
-        "data_source": "simulated"
+        "data_source": "simulated",
     }

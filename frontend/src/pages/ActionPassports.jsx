@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from "react";
+import { getPassports, addPassportReading } from "../api";
 import {
   ClipboardCheck,
   Search,
@@ -15,82 +16,62 @@ import {
   Clock,
 } from "lucide-react";
 
-const STORAGE_KEY = "wattproof-action-passports";
-
-const demoPassports = [
-  {
-    id: "AP-DEMO-001",
-    equipment: "Classroom AC",
-    action: "Reduce daily operating time from 5 hours to 4 hours",
-    status: "Draft",
-    createdAt: "2026-10-14T10:00:00.000Z",
-    dataMode: "SIMULATED",
-    assumptions: {
-      ratedPower: 1800,
-      units: 2,
-      baselineHours: 5,
-      proposedHours: 4,
-      operatingDays: 5,
-      tariff: 8,
-      emissionsFactor: 0.7,
-    },
-    prediction: {
-      energySaved: 18,
-      costSaved: 144,
-      emissionsSaved: 12.6,
-    },
-  },
-  {
-    id: "AP-DEMO-002",
-    equipment: "Computer Lab",
-    action: "Switch off unused computers after lab sessions",
-    status: "Awaiting follow-up",
-    createdAt: "2026-10-13T09:30:00.000Z",
-    dataMode: "SIMULATED",
-    assumptions: {
-      ratedPower: 200,
-      units: 10,
-      baselineHours: 6,
-      proposedHours: 5,
-      operatingDays: 6,
-      tariff: 8,
-      emissionsFactor: 0.7,
-    },
-    prediction: {
-      energySaved: 12,
-      costSaved: 96,
-      emissionsSaved: 8.4,
-    },
-  },
+const READING_SOURCES = [
+  { value: "utility_meter", label: "Utility meter" },
+  { value: "sub_meter", label: "Sub-meter" },
+  { value: "smart_plug", label: "Smart plug" },
+  { value: "manual_log", label: "Manual log" },
+  { value: "simulated_demo", label: "Simulated (demo only)" },
 ];
+
+function sourceLabel(value) {
+  const match = READING_SOURCES.find((item) => item.value === value);
+  return match ? match.label : value;
+}
+
+// Today's date in the user's own time zone, as YYYY-MM-DD.
+function todayISO() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
+function emptyReadingForm() {
+  return {
+    readingDate: todayISO(),
+    observedWeeklyKwh: "",
+    source: "smart_plug",
+    notes: "",
+  };
+}
 
 function getPrediction(passport) {
   const data = passport.prediction || passport.results || {};
 
   const energy = Number(
     data.energySaved ??
-      data.energySavedKwh ??
-      data.energySavedKWh ??
-      data.kwhSaved ??
-      data.weeklyEnergySaved ??
-      data.energySavings ??
-      0
+    data.energySavedKwh ??
+    data.energySavedKWh ??
+    data.kwhSaved ??
+    data.weeklyEnergySaved ??
+    data.energySavings ??
+    0
   );
 
   const cost = Number(
     data.costSaved ??
-      data.costSavedRupees ??
-      data.weeklyCostSaved ??
-      data.costSavings ??
-      0
+    data.costSavedRupees ??
+    data.weeklyCostSaved ??
+    data.costSavings ??
+    0
   );
 
   const emissions = Number(
     data.emissionsSaved ??
-      data.emissionsSavedKg ??
-      data.co2Saved ??
-      data.weeklyEmissionsSaved ??
-      0
+    data.emissionsSavedKg ??
+    data.co2Saved ??
+    data.weeklyEmissionsSaved ??
+    0
   );
 
   return {
@@ -160,103 +141,117 @@ function Metric({ icon: Icon, label, value, unit }) {
 }
 
 export default function ActionPassports() {
-  const [passports, setPassports] = useState(demoPassports);
+  const [passports, setPassports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPassport, setSelectedPassport] = useState(null);
   const [verificationMessage, setVerificationMessage] = useState("");
+  const [readingForm, setReadingForm] = useState(emptyReadingForm());
+  const [readingError, setReadingError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+    let cancelled = false;
 
-      if (saved) {
-        const parsed = JSON.parse(saved);
+    async function loadPassports() {
+      try {
+        const data = await getPassports();
 
-        if (Array.isArray(parsed)) {
-          setPassports(parsed);
+        if (!cancelled) {
+          setPassports(data);
+          setLoadError("");
+        }
+      } catch (error) {
+        console.error("Could not load Action Passports:", error);
+
+        if (!cancelled) {
+          setLoadError(
+            "Could not load Action Passports. Check that the backend is running."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
         }
       }
-    } catch (error) {
-      console.error("Could not load Action Passports:", error);
     }
+
+    loadPassports();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  function savePassports(updated) {
-    setPassports(updated);
-
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-    } catch (error) {
-      console.error("Could not save Action Passports:", error);
-      setVerificationMessage(
-        "The update is visible for this session, but could not be saved in this browser."
-      );
-    }
+  function openPassport(passport) {
+    setSelectedPassport(passport);
+    setVerificationMessage("");
+    setReadingError("");
+    setReadingForm(emptyReadingForm());
   }
 
-  function runSimulatedFollowUp(passport) {
-    const predicted = getPrediction(passport).energy;
+  function updateReadingField(event) {
+    const { name, value } = event.target;
 
-    if (predicted <= 0) {
-      const updated = passports.map((item) =>
-        item.id === passport.id
-          ? {
-              ...item,
-              status: "Insufficient data",
-              verification: {
-                mode: "SIMULATED",
-                message:
-                  "A valid predicted energy saving was not found, so a comparison could not be performed.",
-              },
-            }
-          : item
-      );
+    setReadingForm((current) => ({ ...current, [name]: value }));
+    setReadingError("");
+  }
 
-      savePassports(updated);
-      setSelectedPassport(
-        updated.find((item) => item.id === passport.id)
-      );
-      setVerificationMessage(
-        "Insufficient data: no valid predicted energy saving was found."
+  async function submitReading(event) {
+    event.preventDefault();
+
+    if (!selectedPassport) return;
+
+    const observed = Number(readingForm.observedWeeklyKwh);
+
+    if (
+      readingForm.observedWeeklyKwh === "" ||
+      !Number.isFinite(observed) ||
+      observed < 0
+    ) {
+      setReadingError(
+        "Enter the weekly energy in kWh as a number of 0 or more."
       );
       return;
     }
 
-    // Demonstration only: observed savings are simulated, not measured.
-    const observed = Math.round(predicted * 0.85 * 100) / 100;
-    const difference = Math.round((predicted - observed) * 100) / 100;
-    const newStatus =
-      observed >= predicted ? "Verified in simulation" : "Below prediction";
+    if (!readingForm.readingDate) {
+      setReadingError("Choose the date of the reading.");
+      return;
+    }
 
-    const updated = passports.map((item) =>
-      item.id === passport.id
-        ? {
-            ...item,
-            status: newStatus,
-            verification: {
-              mode: "SIMULATED",
-              baselinePeriod: "Illustrative baseline week",
-              followUpPeriod: "Illustrative follow-up week",
-              predictedKwh: predicted,
-              observedKwh: observed,
-              differenceKwh: difference,
-              message:
-                "Illustrative follow-up values were generated for this demo. No real meter readings were collected.",
-              checkedAt: new Date().toISOString(),
-            },
-          }
-        : item
-    );
+    setSubmitting(true);
 
-    savePassports(updated);
+    try {
+      const updated = await addPassportReading(selectedPassport.id, {
+        readingDate: readingForm.readingDate,
+        observedWeeklyKwh: observed,
+        source: readingForm.source,
+        notes: readingForm.notes,
+      });
 
-    const refreshed = updated.find((item) => item.id === passport.id);
-    setSelectedPassport(refreshed);
-    setVerificationMessage(
-      `Simulated follow-up complete. Predicted: ${formatNumber(
-        predicted
-      )} kWh/week; simulated observed: ${formatNumber(observed)} kWh/week.`
-    );
+      setPassports((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item))
+      );
+      setSelectedPassport(updated);
+      setVerificationMessage("Reading recorded. The comparison is shown above.");
+      setReadingForm((current) => ({
+        ...current,
+        observedWeeklyKwh: "",
+        notes: "",
+      }));
+      setReadingError("");
+    } catch (error) {
+      console.error("Could not record reading:", error);
+      setReadingError(
+        error.message === "Failed to fetch"
+          ? "Could not reach the backend. Check that it is running and try again."
+          : error.message
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const filteredPassports = passports.filter((passport) => {
@@ -278,8 +273,8 @@ export default function ActionPassports() {
     (p.status || "").toLowerCase().includes("verified")
   ).length;
 
-  const awaitingCount = passports.filter((p) =>
-    (p.status || "").toLowerCase().includes("awaiting")
+  const belowCount = passports.filter((p) =>
+    (p.status || "").toLowerCase().includes("below")
   ).length;
 
   return (
@@ -321,14 +316,14 @@ export default function ActionPassports() {
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">Verified in simulation</p>
+            <p className="text-sm text-slate-500">Verified</p>
             <CheckCircle2 className="text-[#2E8B68]" />
           </div>
           <p className="mt-3 text-3xl font-bold text-[#142D27]">
             {verifiedCount}
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            {awaitingCount} awaiting follow-up
+            {belowCount} below prediction
           </p>
         </div>
       </div>
@@ -348,7 +343,20 @@ export default function ActionPassports() {
         </div>
       </div>
 
-      {filteredPassports.length === 0 ? (
+      {loadError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"
+        >
+          {loadError}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+          Loading Action Passports…
+        </div>
+      ) : filteredPassports.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center">
           <ClipboardCheck
             size={36}
@@ -411,9 +419,11 @@ export default function ActionPassports() {
                         >
                           {passport.status || "Draft"}
                         </span>
-                        {passport.verification?.mode === "SIMULATED" && (
+                        {passport.verification && (
                           <p className="mt-2 text-xs text-slate-400">
-                            Simulated result
+                            {passport.verification.evidence === "MEASURED"
+                              ? "Measured reading"
+                              : "Simulated reading"}
                           </p>
                         )}
                       </td>
@@ -427,10 +437,7 @@ export default function ActionPassports() {
 
                       <td className="px-5 py-4">
                         <button
-                          onClick={() => {
-                            setSelectedPassport(passport);
-                            setVerificationMessage("");
-                          }}
+                          onClick={() => openPassport(passport)}
                           className="inline-flex items-center gap-2 rounded-lg bg-[#142D27] px-3 py-2 text-sm font-semibold text-white hover:bg-[#2E8B68]"
                         >
                           <Eye size={15} />
@@ -483,8 +490,20 @@ export default function ActionPassports() {
                   {selectedPassport.status || "Draft"}
                 </span>
                 <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-                  SIMULATED DATA
+                  PREDICTION: SIMULATED
                 </span>
+                {selectedPassport.verification && (
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedPassport.verification.evidence === "MEASURED"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                      }`}
+                  >
+                    {selectedPassport.verification.evidence === "MEASURED"
+                      ? "EVIDENCE: MEASURED"
+                      : "EVIDENCE: SIMULATED"}
+                  </span>
+                )}
               </div>
 
               <section className="rounded-xl border border-slate-200 bg-white p-4">
@@ -558,48 +577,69 @@ export default function ActionPassports() {
                       Follow-up verification
                     </h3>
                     <p className="mt-1 text-sm leading-6 text-slate-600">
-                      Run a demo follow-up to compare the predicted energy
-                      savings with an illustrative observed value. This does
-                      not read real meters or prove actual savings.
+                      After the action is in place, record the energy used
+                      over one full operating week (kWh). It is compared with
+                      the predicted weekly saving. Choose the source
+                      honestly: only meter or smart-plug readings count as
+                      measured evidence.
                     </p>
                   </div>
                 </div>
 
                 {selectedPassport.verification && (
                   <div className="mt-4 rounded-xl bg-[#F7F8F4] p-4">
-                    <p className="text-sm font-semibold text-[#142D27]">
-                      Latest follow-up — simulated
-                    </p>
-                    <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-[#142D27]">
+                        Latest follow-up (
+                        {formatDate(selectedPassport.verification.readingDate)})
+                      </p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedPassport.verification.evidence === "MEASURED"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                          }`}
+                      >
+                        {selectedPassport.verification.evidence === "MEASURED"
+                          ? "MEASURED READING"
+                          : "SIMULATED READING"}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                       <div>
-                        <p className="text-xs text-slate-500">Predicted</p>
+                        <p className="text-xs text-slate-500">
+                          Baseline (modelled)
+                        </p>
                         <p className="mt-1 font-bold text-[#142D27]">
-                          {formatNumber(
-                            selectedPassport.verification.predictedKwh
-                          )}{" "}
+                          {formatNumber(selectedPassport.verification.baselineKwh)}{" "}
                           kWh/week
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">
-                          Simulated observed
+                          Predicted after action
                         </p>
                         <p className="mt-1 font-bold text-[#142D27]">
-                          {formatNumber(
-                            selectedPassport.verification.observedKwh
-                          )}{" "}
+                          {formatNumber(selectedPassport.verification.predictedKwh)}{" "}
+                          kWh/week
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500">Observed</p>
+                        <p className="mt-1 font-bold text-[#142D27]">
+                          {formatNumber(selectedPassport.verification.observedKwh)}{" "}
                           kWh/week
                         </p>
                       </div>
                       <div>
                         <p className="text-xs text-slate-500">
-                          Difference below prediction
+                          Predicted saving achieved
                         </p>
                         <p className="mt-1 font-bold text-[#142D27]">
-                          {formatNumber(
-                            selectedPassport.verification.differenceKwh
-                          )}{" "}
-                          kWh/week
+                          {selectedPassport.verification.observedSavedKwh <= 0
+                            ? "No saving"
+                            : `${formatNumber(
+                              selectedPassport.verification.savingsAchievedPercent
+                            )}%`}
                         </p>
                       </div>
                     </div>
@@ -615,19 +655,134 @@ export default function ActionPassports() {
                   </p>
                 )}
 
-                <button
-                  onClick={() => runSimulatedFollowUp(selectedPassport)}
-                  className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 font-semibold text-white hover:bg-[#246D52]"
-                >
-                  <Play size={17} />
-                  Run simulated follow-up
-                </button>
+                {selectedPassport.readings?.length > 0 && (
+                  <div className="mt-4 overflow-x-auto">
+                    <p className="mb-2 text-sm font-semibold text-[#142D27]">
+                      Recorded readings
+                    </p>
+                    <table className="w-full min-w-[480px] text-left text-sm">
+                      <thead className="text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="py-2 pr-3">Date</th>
+                          <th className="py-2 pr-3">kWh/week</th>
+                          <th className="py-2 pr-3">Source</th>
+                          <th className="py-2 pr-3">Evidence</th>
+                          <th className="py-2">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {selectedPassport.readings.map((reading) => (
+                          <tr key={reading.id}>
+                            <td className="py-2 pr-3">
+                              {formatDate(reading.readingDate)}
+                            </td>
+                            <td className="py-2 pr-3">
+                              {formatNumber(reading.observedWeeklyKwh)}
+                            </td>
+                            <td className="py-2 pr-3">
+                              {sourceLabel(reading.source)}
+                            </td>
+                            <td className="py-2 pr-3">
+                              {reading.measured ? "Measured" : "Simulated"}
+                            </td>
+                            <td className="py-2 text-slate-500">
+                              {reading.notes || "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <form onSubmit={submitReading} className="mt-5 space-y-3">
+                  <p className="text-sm font-semibold text-[#142D27]">
+                    Record a follow-up reading
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="text-sm text-slate-600">
+                      Reading date
+                      <input
+                        type="date"
+                        name="readingDate"
+                        value={readingForm.readingDate}
+                        onChange={updateReadingField}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+                        required
+                      />
+                    </label>
+
+                    <label className="text-sm text-slate-600">
+                      Energy used in one week (kWh)
+                      <input
+                        type="number"
+                        name="observedWeeklyKwh"
+                        min="0"
+                        step="any"
+                        value={readingForm.observedWeeklyKwh}
+                        onChange={updateReadingField}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+                        required
+                      />
+                    </label>
+
+                    <label className="text-sm text-slate-600">
+                      Source
+                      <select
+                        name="source"
+                        value={readingForm.source}
+                        onChange={updateReadingField}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+                      >
+                        {READING_SOURCES.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="block text-sm text-slate-600">
+                    Notes (optional)
+                    <input
+                      type="text"
+                      name="notes"
+                      maxLength={500}
+                      value={readingForm.notes}
+                      onChange={updateReadingField}
+                      placeholder="e.g. normal week, no exams"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 outline-none focus:border-[#2E8B68]"
+                    />
+                  </label>
+
+                  {readingError && (
+                    <p
+                      role="alert"
+                      className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800"
+                    >
+                      {readingError}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="inline-flex items-center gap-2 rounded-xl bg-[#2E8B68] px-4 py-3 font-semibold text-white hover:bg-[#246D52] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Play size={17} />
+                    {submitting ? "Recording…" : "Record reading"}
+                  </button>
+                </form>
               </section>
 
               <p className="text-xs leading-5 text-slate-400">
-                WattProof Twin demo: all sample passports and generated
-                follow-up readings are illustrative. Real verification
-                requires comparable baseline and follow-up energy readings.
+                Predictions come from a simulation using the listed
+                assumptions. A passport only shows measured evidence when
+                its follow-up reading comes from a meter, sub-meter, smart
+                plug or manual log. The baseline is the modelled estimate,
+                not a measured baseline week.
               </p>
             </div>
           </div>

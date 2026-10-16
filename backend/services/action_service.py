@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 
 from database.models import ActionDB
-from seed_data import APPLIANCES
 from services.simulation_service import simulate_appliance
 
 
@@ -10,26 +9,20 @@ def create_action(
     appliance_id: int,
     action_name: str,
     description: str,
-    reduction_percent: float
+    reduction_percent: float,
 ):
-    appliance = None
-
-    for item in APPLIANCES:
-        if item.id == appliance_id:
-            appliance = item
-            break
-
-    if appliance is None:
-        return None
-
     simulation = simulate_appliance(
+        db,
         appliance_id,
-        reduction_percent
+        reduction_percent,
     )
+
+    if simulation is None:
+        return None
 
     action = ActionDB(
         appliance_id=appliance_id,
-        appliance=appliance.name,
+        appliance=simulation["appliance"],
         action_name=action_name,
         description=description,
         reduction_percent=reduction_percent,
@@ -42,7 +35,7 @@ def create_action(
         predicted_co2_saved_kg=simulation["co2_saved_kg"],
 
         status="pending_verification",
-        data_source="simulated"
+        data_source="simulated",
     )
 
     db.add(action)

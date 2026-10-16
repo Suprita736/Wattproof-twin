@@ -1,20 +1,23 @@
 import "./AIChatbox.css";
 import { useState, useRef, useEffect } from "react";
-import {
-  SUMMARY_METRICS,
-  EQUIPMENT_PROFILES,
-  RECOMMENDATIONS,
-} from "../data/mockData";
+import { askAdvisor, getAdvisorStatus } from "../api";
+
+const GREETING =
+  "Hi! I'm the WattProof advisor. I can explain your equipment diagnosis, simulations and Action Passports, and suggest what to do next.";
+
+const SUGGESTIONS = [
+  "What should I fix first?",
+  "Explain my latest passport",
+  "Is any saving verified yet?",
+];
 
 export default function AIChatbox() {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [status, setStatus] = useState({ state: "unknown" });
   const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "Hi! I'm WattProof Assistant 🌿 Ask me about energy usage, equipment, or saving electricity.",
-    },
+    { role: "assistant", text: GREETING },
   ]);
 
   const bottomRef = useRef(null);
@@ -23,67 +26,45 @@ export default function AIChatbox() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  function getReply(question) {
-    const q = question.toLowerCase();
+  // Check once, when the chat is first opened, whether the advisor has a key.
+  useEffect(() => {
+    if (!isOpen || status.state !== "unknown") return;
 
-    if (q.includes("saving") || q.includes("save") || q.includes("recommend")) {
-      return (
-        "Here are your current illustrative recommendations:\n\n" +
-        RECOMMENDATIONS.map(
-          (item, i) =>
-            `${i + 1}. ${item.equipment}: ${item.action}`
-        ).join("\n\n") +
-        "\n\nThese are estimates based on configured assumptions, not verified meter readings."
-      );
+    let cancelled = false;
+
+    async function checkStatus() {
+      try {
+        const data = await getAdvisorStatus();
+
+        if (!cancelled) {
+          setStatus({ state: data.configured ? "ready" : "not-configured" });
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus({ state: "offline" });
+        }
+      }
     }
 
-    if (q.includes("equipment") || q.includes("appliance")) {
-      return (
-        `Your equipment inventory contains ${EQUIPMENT_PROFILES.length} profiles:\n\n` +
-        EQUIPMENT_PROFILES.map(
-          (item) =>
-            `• ${item.name}: ${item.ratedPowerW} W, ${item.units} unit(s)`
-        ).join("\n") +
-        "\n\nThe inventory uses demonstration data."
-      );
-    }
+    checkStatus();
 
-    if (q.includes("cost") || q.includes("bill") || q.includes("rupee")) {
-      return (
-        `The dashboard's illustrative estimated cost is ₹${SUMMARY_METRICS.estimatedCostINR.toLocaleString("en-IN")}. ` +
-        "This is based on demonstration data and is not a live electricity bill."
-      );
-    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, status.state]);
 
-    if (q.includes("emission") || q.includes("carbon")) {
-      return (
-        `The dashboard estimates ${SUMMARY_METRICS.estimatedEmissionsKgCO2e} kg CO₂e in emissions. ` +
-        "This is a simulated estimate, not a measurement of actual emissions."
-      );
-    }
-
-    if (q.includes("energy") || q.includes("electricity") || q.includes("usage")) {
-      return (
-        `The dashboard shows ${SUMMARY_METRICS.energyUsedKWh} kWh of illustrative energy usage. ` +
-        `The estimated cost is ₹${SUMMARY_METRICS.estimatedCostINR.toLocaleString("en-IN")}. ` +
-        "You can explore the Digital Twin to compare operating scenarios."
-      );
-    }
-
-    if (q.includes("hello") || q.includes("hi ") || q === "hi") {
-      return "Hello! 🌿 I can explain energy usage, equipment profiles, estimated costs, emissions, and recommendations. What would you like to explore?";
-    }
-
-    return (
-      "I can help you explore WattProof Twin's current demonstration data. " +
-      "Try asking about energy usage, equipment, electricity costs, emissions, or recommendations. " +
-      "For open-ended questions, we'll connect a real AI model in the next stage."
-    );
-  }
-
-  function sendMessage(text = message) {
+  async function sendMessage(text = message) {
     const question = text.trim();
     if (!question || isTyping) return;
+
+    // Earlier answers and the new question; greeting and errors stay local.
+    const history = [
+      ...messages
+        .slice(1)
+        .filter((item) => !item.isError)
+        .map((item) => ({ role: item.role, content: item.text })),
+      { role: "user", content: question },
+    ];
 
     setMessages((previous) => [
       ...previous,
@@ -92,16 +73,44 @@ export default function AIChatbox() {
     setMessage("");
     setIsTyping(true);
 
-    // Temporary local response logic; no external AI model is called.
-    window.setTimeout(() => {
-      const reply = getReply(question);
+    try {
+      const data = await askAdvisor(history);
+
+      setStatus({ state: "ready" });
       setMessages((previous) => [
         ...previous,
-        { role: "assistant", text: reply },
+        { role: "assistant", text: data.reply },
       ]);
+    } catch (error) {
+      console.error("Advisor request failed:", error);
+
+      const failed = error.message === "Failed to fetch";
+
+      if (failed) {
+        setStatus({ state: "offline" });
+      }
+
+      setMessages((previous) => [
+        ...previous,
+        {
+          role: "assistant",
+          isError: true,
+          text: failed
+            ? "I could not reach the backend. Check that it is running and try again."
+            : error.message,
+        },
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 400);
+    }
   }
+
+  const notice =
+    status.state === "not-configured"
+      ? "The AI advisor is not set up yet. Add ANTHROPIC_API_KEY to the backend and restart it."
+      : status.state === "offline"
+        ? "The backend is not reachable right now."
+        : "Answers are generated by an AI model from your saved data. Figures are estimates unless marked as measured, so double-check important numbers.";
 
   return (
     <>
@@ -110,8 +119,8 @@ export default function AIChatbox() {
           <header className="wp-chat-header">
             <div className="wp-chat-avatar">✦</div>
             <div className="wp-chat-heading">
-              <strong>WattProof Assistant</strong>
-              <span>Energy insights · Demo mode</span>
+              <strong>WattProof Advisor</strong>
+              <span>Energy insights · AI-generated</span>
             </div>
             <button
               className="wp-chat-close"
@@ -122,24 +131,25 @@ export default function AIChatbox() {
             </button>
           </header>
 
-          <div className="wp-chat-notice">
-            Responses use illustrative project data, not live readings.
-          </div>
+          <div className="wp-chat-notice">{notice}</div>
 
           <div className="wp-chat-messages" aria-live="polite">
             {messages.map((item, index) => (
               <div
                 key={index}
-                className={`wp-chat-row ${
-                  item.role === "user" ? "wp-chat-user-row" : ""
-                }`}
+                className={`wp-chat-row ${item.role === "user" ? "wp-chat-user-row" : ""
+                  }`}
               >
                 <div
-                  className={`wp-chat-bubble ${
-                    item.role === "user"
+                  className={`wp-chat-bubble ${item.role === "user"
                       ? "wp-chat-user-bubble"
                       : "wp-chat-assistant-bubble"
-                  }`}
+                    }`}
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    ...(item.isError ? { color: "#9f1239" } : {}),
+                  }}
+                  role={item.isError ? "alert" : undefined}
                 >
                   {item.text}
                 </div>
@@ -155,11 +165,7 @@ export default function AIChatbox() {
           </div>
 
           <div className="wp-chat-suggestions">
-            {[
-              "How can I save energy?",
-              "Show my equipment",
-              "What is my estimated cost?",
-            ].map((prompt) => (
+            {SUGGESTIONS.map((prompt) => (
               <button
                 key={prompt}
                 onClick={() => sendMessage(prompt)}
@@ -182,6 +188,7 @@ export default function AIChatbox() {
               onChange={(event) => setMessage(event.target.value)}
               placeholder="Ask about your building..."
               aria-label="Type your question"
+              maxLength={1000}
             />
             <button type="submit" disabled={!message.trim() || isTyping}>
               Send
@@ -194,7 +201,7 @@ export default function AIChatbox() {
         className="wp-chat-launcher"
         onClick={() => setIsOpen((open) => !open)}
         aria-label={isOpen ? "Close WattProof chat" : "Open WattProof chat"}
-        title="Ask WattProof Assistant"
+        title="Ask WattProof Advisor"
       >
         {isOpen ? "×" : "✦"}
         {!isOpen && <span>Ask WattProof</span>}

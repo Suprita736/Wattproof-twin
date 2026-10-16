@@ -1,9 +1,18 @@
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.simulation import router as simulation_router
 from routes.appliances import router as appliances_router
 from routes.energy import router as energy_router
 from routes.actions import router as actions_router
+from routes.passports import router as passports_router
+from routes.diagnosis import router as diagnosis_router
+from routes.advisor import router as advisor_router
 from database.connection import Base, engine, SessionLocal
 from database.seed import seed_appliances
 from database import models
@@ -25,7 +34,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -37,6 +47,9 @@ app.include_router(appliances_router)
 app.include_router(energy_router)
 app.include_router(simulation_router)
 app.include_router(actions_router)
+app.include_router(passports_router)
+app.include_router(diagnosis_router)
+app.include_router(advisor_router)
 @app.get("/")
 def root():
     return {

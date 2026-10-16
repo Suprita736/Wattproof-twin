@@ -694,9 +694,7 @@ export default function App() {
           ) : (
             <PagePlaceholder page={activePage} />
           )}
-          <footer className="py-8 text-center text-xs leading-5 text-[#64748B]">
-            WattProof Twin · Demonstration interface · Sample data only
-          </footer>
+          WattProof Twin · Demonstration interface · Values are estimates unless marked as measured
         </main>
       </div>
       <AIChatbox />
