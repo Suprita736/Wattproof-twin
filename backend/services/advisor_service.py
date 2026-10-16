@@ -9,13 +9,14 @@ try:
 except ImportError:
     pass
 
-import anthropic
+import openai
 
 from database.models import ApplianceDB
 from services.diagnosis_service import run_diagnosis
 from services.passport_service import list_passports
 
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_MODEL = "openai/gpt-4o-mini"
 
 
 class AdvisorError(Exception):
@@ -28,17 +29,17 @@ class AdvisorError(Exception):
 
 
 def is_configured() -> bool:
-    """Return whether an Anthropic API key is configured."""
-    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    """Return whether an OpenRouter API key is configured."""
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
     mock = os.getenv("MOCK_ADVISOR", "").strip().lower() in ("true", "1", "yes")
     return bool(key or mock)
 
 
 def get_model() -> str:
     """Return the active model name."""
-    if os.getenv("MOCK_ADVISOR", "").strip().lower() in ("true", "1", "yes") and not os.getenv("ANTHROPIC_API_KEY", "").strip():
+    if os.getenv("MOCK_ADVISOR", "").strip().lower() in ("true", "1", "yes") and not os.getenv("OPENROUTER_API_KEY", "").strip():
         return "mock-advisor"
-    return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL).strip()
+    return os.getenv("OPENROUTER_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
 
 
 def _build_context(db: Session) -> str:
@@ -136,6 +137,7 @@ Guidelines:
 3. When explaining Action Passports, clearly explain the action taken, predicted savings (kWh, cost, emissions), and whether follow-up readings verify the prediction (distinguish clearly between MEASURED and SIMULATED evidence).
 4. Be professional, clear, and actionable. Use bullet points and bold highlights for readability.
 5. If figures are estimates or simulations, state that clearly so users understand the difference between modelled estimates and measured meter data.
+6. Keep answers concise (under about 150 words) unless the user asks for detail.
 """
 
 
@@ -219,19 +221,19 @@ def _generate_mock_reply(db: Session, last_user_message: str) -> str:
 
 def ask_advisor(db: Session, messages: list[Any]) -> dict[str, str]:
     """Process a chat request and return the advisor's response."""
-    key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+    key = os.getenv("OPENROUTER_API_KEY", "").strip()
     mock = os.getenv("MOCK_ADVISOR", "").strip().lower() in ("true", "1", "yes")
 
     if not key and not mock:
         raise AdvisorError(
             status_code=503,
             detail=(
-                "The AI advisor is not configured. Add ANTHROPIC_API_KEY to "
+                "The AI advisor is not configured. Add OPENROUTER_API_KEY to "
                 "the backend .env file and restart the backend."
             ),
         )
 
-    # Extract formatted messages for Anthropic or mock
+    # Extract formatted messages for OpenRouter or mock
     formatted_messages = []
     last_user_content = ""
     for msg in messages:
@@ -251,14 +253,14 @@ def ask_advisor(db: Session, messages: list[Any]) -> dict[str, str]:
     if not formatted_messages:
         raise AdvisorError(status_code=400, detail="No message content provided.")
 
-    # Anthropic requires the first message to have role 'user'
+    # Conversation should start with a 'user' message
     while formatted_messages and formatted_messages[0]["role"] != "user":
         formatted_messages.pop(0)
 
     if not formatted_messages:
         raise AdvisorError(status_code=400, detail="First message must be from user.")
 
-    # If mock mode is active and no Anthropic key is set, return mock reply
+    # If mock mode is active and no OpenRouter key is set, return mock reply
     if mock and not key:
         reply = _generate_mock_reply(db, last_user_content)
         return {"reply": reply, "model": "mock-advisor"}
@@ -268,21 +270,28 @@ def ask_advisor(db: Session, messages: list[Any]) -> dict[str, str]:
     full_system_prompt = f"{SYSTEM_PROMPT}\n\n{facility_context}"
     model = get_model()
 
+    # OpenRouter uses the OpenAI chat format: the system prompt is the first message
+    chat_messages = [{"role": "system", "content": full_system_prompt}]
+    chat_messages.extend(formatted_messages)
+
     try:
-        client = anthropic.Anthropic(api_key=key)
-        response = client.messages.create(
+        client = openai.OpenAI(
+            api_key=key,
+            base_url=os.getenv("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL).strip(),
+            default_headers={
+                "HTTP-Referer": os.getenv("OPENROUTER_SITE_URL", "http://localhost:5173"),
+                "X-Title": os.getenv("OPENROUTER_APP_NAME", "WattProof Twin"),
+            },
+        )
+        response = client.chat.completions.create(
             model=model,
-            max_tokens=1000,
-            system=full_system_prompt,
-            messages=formatted_messages,
+            max_tokens=1500,
+            messages=chat_messages,
         )
 
-        reply_parts = []
-        for block in response.content:
-            if getattr(block, "type", "") == "text":
-                reply_parts.append(block.text)
-
-        reply = "".join(reply_parts).strip()
+        reply = ""
+        if response.choices:
+            reply = (response.choices[0].message.content or "").strip()
         if not reply:
             reply = "I was unable to generate a response. Please try asking again."
 
@@ -291,25 +300,25 @@ def ask_advisor(db: Session, messages: list[Any]) -> dict[str, str]:
             "model": model,
         }
 
-    except anthropic.AuthenticationError as exc:
+    except openai.AuthenticationError as exc:
         raise AdvisorError(
             status_code=401,
-            detail="Anthropic API key is invalid or expired. Check ANTHROPIC_API_KEY.",
+            detail="OpenRouter API key is invalid or expired. Check OPENROUTER_API_KEY.",
         ) from exc
-    except anthropic.RateLimitError as exc:
+    except openai.RateLimitError as exc:
         raise AdvisorError(
             status_code=429,
-            detail="Anthropic rate limit exceeded. Please wait a moment and try again.",
+            detail="OpenRouter rate limit exceeded. Please wait a moment and try again.",
         ) from exc
-    except anthropic.APIStatusError as exc:
+    except openai.APIStatusError as exc:
         raise AdvisorError(
             status_code=exc.status_code or 502,
-            detail=f"Anthropic API error: {exc.message}",
+            detail=f"OpenRouter API error: {exc.message}",
         ) from exc
-    except anthropic.APIConnectionError as exc:
+    except openai.APIConnectionError as exc:
         raise AdvisorError(
             status_code=503,
-            detail="Could not reach Anthropic API. Check network connectivity.",
+            detail="Could not reach OpenRouter. Check network connectivity.",
         ) from exc
     except Exception as exc:
         raise AdvisorError(
